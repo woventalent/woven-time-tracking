@@ -51,7 +51,7 @@ function ProjectSelect({ projects, value, onChange }) {
   )
 }
 
-export default function Timesheets() {
+export default function Timesheets({ initialProjectId }) {
   const [entries,   setEntries]   = useState([])
   const [projects,  setProjects]  = useState([])  // only assigned projects
   const [filters,   setFilters]   = useState({ project_id: '', from: '', to: '' })
@@ -63,9 +63,16 @@ export default function Timesheets() {
   const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
-    // Only fetch projects the user is allocated to
-    api.get('/projects?assigned=true').then(setProjects)
-  }, [])
+    api.get('/projects?assigned=true').then(ps => {
+      setProjects(ps)
+      if (initialProjectId) {
+        setEditing(null)
+        setForm({ project_id: String(initialProjectId), date: today(), hours: '', description: '' })
+        setError('')
+        setShowModal(true)
+      }
+    })
+  }, [initialProjectId])
 
   useEffect(() => {
     const q = new URLSearchParams(

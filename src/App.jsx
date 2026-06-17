@@ -8,13 +8,6 @@ import Admin from './pages/Admin.jsx'
 import Login from './pages/Login.jsx'
 import WorkspaceSelect from './pages/WorkspaceSelect.jsx'
 
-const PAGES = {
-  projects:   <Projects />,
-  timesheets: <Timesheets />,
-  reports:    <Reports />,
-  settings:   <Admin />,
-}
-
 function LoadingScreen() {
   return (
     <div style={{
@@ -31,14 +24,30 @@ function LoadingScreen() {
 
 function MainApp() {
   const [page, setPage] = useState('projects')
-  const params = new URLSearchParams(window.location.search)
-  const loginError = params.get('login-error')
+  const [logTimeProjectId, setLogTimeProjectId] = useState(null)
+
+  function handleLogTime(projectId) {
+    setLogTimeProjectId(projectId)
+    setPage('timesheets')
+  }
+
+  function handleNav(p) {
+    setLogTimeProjectId(null)
+    setPage(p)
+  }
+
+  const pages = {
+    projects:   <Projects onLogTime={handleLogTime} />,
+    timesheets: <Timesheets initialProjectId={logTimeProjectId} />,
+    reports:    <Reports />,
+    settings:   <Admin />,
+  }
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-      <Sidebar current={page} onNav={setPage} />
+      <Sidebar current={page} onNav={handleNav} />
       <main style={{ flex: 1, overflow: 'auto', padding: '36px 40px', background: '#f8fafc' }}>
-        {PAGES[page]}
+        {pages[page]}
       </main>
     </div>
   )
