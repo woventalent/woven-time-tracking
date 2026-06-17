@@ -14,7 +14,9 @@ const PORT = process.env.PORT || 3000
 const MS_AUTH    = !!(process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET)
 const TENANT     = process.env.AZURE_TENANT_ID || 'woventalent.in'
 const REDIRECT_URI = process.env.AUTH_REDIRECT_URI || `http://localhost:${PORT}/auth/callback`
-const SUPER_ADMIN_EMAIL = (process.env.SUPER_ADMIN_EMAIL || '').toLowerCase().trim()
+const SUPER_ADMIN_EMAILS = new Set(
+  (process.env.SUPER_ADMIN_EMAIL || '').split(',').map(e => e.toLowerCase().trim()).filter(Boolean)
+)
 
 // ── Upload dir ────────────────────────────────────────────────────────────────
 const UPLOAD_DIR = join(__dirname, 'uploads')
@@ -243,8 +245,8 @@ function ensureWorkspaceMember(userId, workspaceId, role = 'member') {
 }
 
 function maybeElevateSuperAdmin(user) {
-  if (!SUPER_ADMIN_EMAIL) return
-  if ((user.email || '').toLowerCase() === SUPER_ADMIN_EMAIL) {
+  if (!SUPER_ADMIN_EMAILS.size) return
+  if (SUPER_ADMIN_EMAILS.has((user.email || '').toLowerCase())) {
     db.prepare("UPDATE users SET global_role = 'super_admin' WHERE id = ? AND (global_role IS NULL OR global_role != 'super_admin')").run(user.id)
   }
 }
