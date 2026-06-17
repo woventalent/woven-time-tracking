@@ -21,7 +21,7 @@ export function AuthProvider({ children }) {
       setUser(null)
       setWorkspace(null)
     } else {
-      setUser({ id: me.userId, name: me.userName, email: me.userEmail, role: me.role })
+      setUser({ id: me.userId, name: me.userName, email: me.userEmail, role: me.role, globalRole: me.globalRole })
       setWorkspace(me.workspaceId
         ? { id: me.workspaceId, name: me.workspaceName, slug: me.workspaceSlug }
         : null

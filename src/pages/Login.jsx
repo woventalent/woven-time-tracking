@@ -53,7 +53,7 @@ export default function Login({ errorMsg }) {
         {/* Logo */}
         <div style={{ marginBottom: 32 }}>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.5px' }}>Woven</div>
-          <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>Research &amp; Insights · Time Tracking</div>
+          <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>Time Tracking</div>
         </div>
 
         <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0f172a', marginBottom: 6 }}>Sign in</h2>

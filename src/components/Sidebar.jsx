@@ -8,8 +8,25 @@ const NAV = [
 ]
 
 export default function Sidebar({ current, onNav }) {
-  const { user, workspace, logout } = useAuth()
-  const [showUserMenu, setShowUserMenu] = useState(false)
+  const { user, workspace, logout, selectWorkspace } = useAuth()
+  const [showUserMenu, setShowUserMenu]   = useState(false)
+  const [showWsMenu,   setShowWsMenu]     = useState(false)
+  const [workspaces,   setWorkspaces]     = useState([])
+
+  async function openWsSwitcher() {
+    if (!showWsMenu) {
+      const r = await fetch('/api/auth/workspaces')
+      const ws = await r.json()
+      setWorkspaces(ws)
+    }
+    setShowWsMenu(v => !v)
+    setShowUserMenu(false)
+  }
+
+  async function switchWs(id) {
+    setShowWsMenu(false)
+    await selectWorkspace(id)
+  }
 
   return (
     <aside style={{
@@ -18,14 +35,44 @@ export default function Sidebar({ current, onNav }) {
       display: 'flex', flexDirection: 'column',
       position: 'relative',
     }}>
-      {/* Header — workspace name */}
-      <div style={{ padding: '22px 18px 18px', borderBottom: '1px solid #1e293b' }}>
+      {/* Header — workspace switcher */}
+      <div style={{ padding: '18px 18px 14px', borderBottom: '1px solid #1e293b', position: 'relative' }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
           Workspace
         </div>
-        <div style={{ color: '#f1f5f9', fontWeight: 700, fontSize: 14, lineHeight: 1.3 }}>
-          {workspace?.name || 'Woven'}
-        </div>
+        <button onClick={openWsSwitcher} style={{
+          display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none',
+          cursor: 'pointer', padding: 0, textAlign: 'left', width: '100%',
+        }}>
+          <span style={{ color: '#f1f5f9', fontWeight: 700, fontSize: 14, lineHeight: 1.3, flex: 1 }}>
+            {workspace?.name || 'Woven'}
+          </span>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth={2}>
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+        {showWsMenu && (
+          <div style={{
+            position: 'absolute', top: '100%', left: 8, right: 8, zIndex: 100,
+            background: '#1e293b', borderRadius: 8, border: '1px solid #334155',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.4)', overflow: 'hidden',
+          }}>
+            {workspaces.map(ws => (
+              <button key={ws.id} onClick={() => switchWs(ws.id)} style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                padding: '10px 14px', border: 'none', background: ws.id === workspace?.id ? 'rgba(37,99,235,0.2)' : 'transparent',
+                color: ws.id === workspace?.id ? '#93c5fd' : '#cbd5e1',
+                fontSize: 13, cursor: 'pointer', textAlign: 'left',
+              }}>
+                <div style={{ width: 24, height: 24, borderRadius: 6, background: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+                  {ws.name.charAt(0)}
+                </div>
+                {ws.name}
+                {ws.id === workspace?.id && <span style={{ marginLeft: 'auto', fontSize: 10, color: '#3b82f6' }}>✓</span>}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Main nav */}

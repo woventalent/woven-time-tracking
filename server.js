@@ -14,6 +14,7 @@ const PORT = process.env.PORT || 3000
 const MS_AUTH    = !!(process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET)
 const TENANT     = process.env.AZURE_TENANT_ID || 'woventalent.in'
 const REDIRECT_URI = process.env.AUTH_REDIRECT_URI || `http://localhost:${PORT}/auth/callback`
+const SUPER_ADMIN_EMAIL = (process.env.SUPER_ADMIN_EMAIL || '').toLowerCase().trim()
 
 // ── Upload dir ────────────────────────────────────────────────────────────────
 const UPLOAD_DIR = join(__dirname, 'uploads')
@@ -164,6 +165,8 @@ ensureColumn('projects',           'requestor_contact_id', 'INTEGER REFERENCES c
 ensureColumn('timesheet_entries',  'user_id',              'INTEGER REFERENCES users(id)')
 ensureColumn('projects',           'report_initiated',     'DATE')
 ensureColumn('projects',           'report_delivered',     'DATE')
+ensureColumn('users',              'global_role',          "TEXT DEFAULT NULL")
+ensureColumn('workspaces',         'code_prefix',          "TEXT DEFAULT 'WRI'")
 
 // ── Seed defaults ─────────────────────────────────────────────────────────────
 db.exec(`INSERT OR IGNORE INTO workspaces (id, name, slug)
@@ -201,7 +204,7 @@ function createSession(userId, workspaceId) {
 function getSession(id) {
   if (!id) return null
   return db.prepare(`
-    SELECT s.*, u.name AS user_name, u.email AS user_email,
+    SELECT s.*, u.name AS user_name, u.email AS user_email, u.global_role AS user_global_role,
            w.name AS workspace_name, w.slug AS workspace_slug
     FROM sessions s
     JOIN users u ON u.id = s.user_id
@@ -237,6 +240,13 @@ function upsertUser({ microsoftOid, email, name }) {
 
 function ensureWorkspaceMember(userId, workspaceId, role = 'member') {
   db.prepare('INSERT OR IGNORE INTO workspace_members (user_id, workspace_id, role) VALUES (?, ?, ?)').run(userId, workspaceId, role)
+}
+
+function maybeElevateSuperAdmin(user) {
+  if (!SUPER_ADMIN_EMAIL) return
+  if ((user.email || '').toLowerCase() === SUPER_ADMIN_EMAIL) {
+    db.prepare("UPDATE users SET global_role = 'super_admin' WHERE id = ? AND (global_role IS NULL OR global_role != 'super_admin')").run(user.id)
+  }
 }
 
 function setSessionCookie(res, id) {
@@ -288,6 +298,7 @@ app.get('/auth/callback', async (req, res) => {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     })).json()
     const user = upsertUser({ microsoftOid: profile.id, email: profile.mail || profile.userPrincipalName, name: profile.displayName })
+    maybeElevateSuperAdmin(user)
     if (getUserWorkspaces(user.id).length === 0) ensureWorkspaceMember(user.id, 1)
     const ws = getUserWorkspaces(user.id)
     const sessionId = createSession(user.id, ws.length === 1 ? ws[0].id : null)
@@ -304,6 +315,7 @@ app.post('/auth/dev-login', (req, res) => {
   const { email, name } = req.body
   if (!email || !name) return res.status(400).json({ error: 'Email and name required' })
   const user = upsertUser({ microsoftOid: null, email, name })
+  maybeElevateSuperAdmin(user)
   if (getUserWorkspaces(user.id).length === 0) ensureWorkspaceMember(user.id, 1)
   const ws = getUserWorkspaces(user.id)
   const sessionId = createSession(user.id, ws.length === 1 ? ws[0].id : null)
@@ -329,6 +341,7 @@ app.get('/api/auth/me', (req, res) => {
     userId: s.user_id, userName: s.user_name, userEmail: s.user_email,
     workspaceId: s.workspace_id, workspaceName: s.workspace_name, workspaceSlug: s.workspace_slug,
     role: wm?.role ?? 'member',
+    globalRole: s.user_global_role ?? null,
   })
 })
 
@@ -355,6 +368,7 @@ app.use('/api', (req, res, next) => {
   if (!s.workspace_id) return res.status(403).json({ error: 'No workspace selected' })
   req.userId      = Number(s.user_id)
   req.workspaceId = Number(s.workspace_id)
+  req.globalRole  = s.user_global_role ?? null
   const wm = db.prepare('SELECT role FROM workspace_members WHERE user_id = ? AND workspace_id = ?').get(req.userId, req.workspaceId)
   req.userRole = wm?.role ?? 'member'
   next()
@@ -494,6 +508,7 @@ app.get('/api/workspace-users', (req, res) => {
 })
 
 app.post('/api/workspace-users', (req, res) => {
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
   const { name, email, role } = req.body
   if (!name?.trim() || !email?.trim()) return res.status(400).json({ error: 'Name and email required' })
   try {
@@ -504,23 +519,76 @@ app.post('/api/workspace-users', (req, res) => {
 })
 
 app.put('/api/workspace-users/:userId/role', (req, res) => {
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
   db.prepare('UPDATE workspace_members SET role = ? WHERE user_id = ? AND workspace_id = ?')
     .run(req.body.role, req.params.userId, req.workspaceId)
   res.json({ success: true })
 })
 
 app.delete('/api/workspace-users/:userId', (req, res) => {
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
   db.prepare('DELETE FROM workspace_members WHERE user_id = ? AND workspace_id = ?').run(req.params.userId, req.workspaceId)
+  res.json({ success: true })
+})
+
+// ── ADMIN: Workspace management (super_admin only) ────────────────────────────
+
+app.get('/api/admin/workspaces', (req, res) => {
+  if (req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Super admin only' })
+  res.json(db.prepare(`
+    SELECT w.*,
+      COUNT(DISTINCT wm.user_id) AS member_count,
+      COUNT(DISTINCT p.id)       AS project_count
+    FROM workspaces w
+    LEFT JOIN workspace_members wm ON wm.workspace_id = w.id
+    LEFT JOIN projects p           ON p.workspace_id  = w.id
+    GROUP BY w.id ORDER BY w.name
+  `).all())
+})
+
+app.post('/api/admin/workspaces', (req, res) => {
+  if (req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Super admin only' })
+  const { name, code_prefix } = req.body
+  if (!name?.trim()) return res.status(400).json({ error: 'Workspace name is required' })
+  if (!code_prefix?.trim()) return res.status(400).json({ error: 'Code prefix is required' })
+  const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  const prefix = code_prefix.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
+  try {
+    const r = db.prepare('INSERT INTO workspaces (name, slug, code_prefix) VALUES (?, ?, ?)').run(name.trim(), slug, prefix)
+    ensureWorkspaceMember(req.userId, r.lastInsertRowid, 'admin')
+    res.json({ id: r.lastInsertRowid, name: name.trim(), slug, code_prefix: prefix })
+  } catch { res.status(400).json({ error: 'Workspace name or slug already exists' }) }
+})
+
+app.put('/api/admin/workspaces/:id', (req, res) => {
+  if (req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Super admin only' })
+  const { name, code_prefix } = req.body
+  if (!name?.trim()) return res.status(400).json({ error: 'Workspace name is required' })
+  const prefix = (code_prefix || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
+  db.prepare('UPDATE workspaces SET name = ?, code_prefix = ? WHERE id = ?').run(name.trim(), prefix || 'WRI', req.params.id)
+  res.json({ success: true })
+})
+
+app.delete('/api/admin/workspaces/:id', (req, res) => {
+  if (req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Super admin only' })
+  const counts = db.prepare('SELECT COUNT(*) AS c FROM projects WHERE workspace_id = ?').get(req.params.id)
+  if (counts.c > 0) return res.status(400).json({ error: 'Cannot delete a workspace that has projects. Archive all projects first.' })
+  db.prepare('DELETE FROM workspaces WHERE id = ?').run(req.params.id)
   res.json({ success: true })
 })
 
 // ── PROJECTS ──────────────────────────────────────────────────────────────────
 
 function nextProjectCode(workspaceId) {
-  const last = db.prepare(`SELECT project_code FROM projects WHERE workspace_id = ? AND project_code LIKE 'WRI-%'
-    ORDER BY CAST(SUBSTR(project_code,5) AS INTEGER) DESC LIMIT 1`).get(workspaceId)
-  if (!last) return 'WRI-001'
-  return `WRI-${String(parseInt(last.project_code.slice(4)) + 1).padStart(3, '0')}`
+  const ws = db.prepare('SELECT code_prefix FROM workspaces WHERE id = ?').get(workspaceId)
+  const prefix = (ws?.code_prefix || 'WRI').toUpperCase()
+  const offset = prefix.length + 2 // e.g. "WRI-" = 4, so SUBSTR starts at 5
+  const last = db.prepare(
+    `SELECT project_code FROM projects WHERE workspace_id = ? AND project_code LIKE ?
+     ORDER BY CAST(SUBSTR(project_code, ?) AS INTEGER) DESC LIMIT 1`
+  ).get(workspaceId, `${prefix}-%`, offset)
+  if (!last) return `${prefix}-001`
+  return `${prefix}-${String(parseInt(last.project_code.slice(prefix.length + 1)) + 1).padStart(3, '0')}`
 }
 
 app.get('/api/projects', (req, res) => {

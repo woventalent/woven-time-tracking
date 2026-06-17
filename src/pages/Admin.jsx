@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { api } from '../api.js'
 import Modal from '../components/Modal.jsx'
+import { useAuth } from '../contexts/AuthContext.jsx'
 
 const iStyle = {
   width: '100%', padding: '8px 12px', border: '1px solid #cbd5e1',
@@ -455,15 +456,121 @@ function ModalBtns({ onClose, label }) {
 }
 
 // ── Main Settings Page ────────────────────────────────────────────────────────
-const TABS = [
+// ── Workspaces Tab (super admin only) ────────────────────────────────────────
+function WorkspacesTab() {
+  const [workspaces, setWorkspaces] = useState([])
+  const [showModal,  setShowModal]  = useState(false)
+  const [editing,    setEditing]    = useState(null)
+  const [form,       setForm]       = useState({ name: '', code_prefix: '' })
+  const [error,      setError]      = useState('')
+  const [saving,     setSaving]     = useState(false)
+
+  useEffect(() => { load() }, [])
+  function load() {
+    fetch('/api/admin/workspaces').then(r => r.json()).then(d => {
+      if (Array.isArray(d)) setWorkspaces(d)
+    })
+  }
+
+  function openAdd()   { setEditing(null); setForm({ name: '', code_prefix: '' }); setError(''); setShowModal(true) }
+  function openEdit(w) { setEditing(w); setForm({ name: w.name, code_prefix: w.code_prefix || '' }); setError(''); setShowModal(true) }
+
+  async function submit(e) {
+    e.preventDefault()
+    setError(''); setSaving(true)
+    try {
+      if (editing) {
+        const r = await fetch('/api/admin/workspaces/' + editing.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+        if (!r.ok) throw new Error((await r.json()).error)
+      } else {
+        const r = await fetch('/api/admin/workspaces', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+        if (!r.ok) throw new Error((await r.json()).error)
+      }
+      setShowModal(false); load()
+    } catch (err) { setError(err.message) }
+    finally { setSaving(false) }
+  }
+
+  async function del(w) {
+    if (!confirm(`Delete workspace "${w.name}"? This cannot be undone.`)) return
+    const r = await fetch('/api/admin/workspaces/' + w.id, { method: 'DELETE' })
+    const d = await r.json()
+    if (!r.ok) return alert(d.error)
+    load()
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <p style={{ color: '#64748b', fontSize: 14 }}>Create and manage team workspaces. Each workspace is fully isolated.</p>
+        <button onClick={openAdd} style={{ background: '#2563eb', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ New Workspace</button>
+      </div>
+
+      <TableShell cols={['Workspace', 'Code Prefix', 'Members', 'Projects', 'Actions']}>
+        {workspaces.length === 0 ? (
+          <tr><td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>No workspaces yet.</td></tr>
+        ) : workspaces.map(w => (
+          <tr key={w.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+            <td style={{ padding: '12px 16px' }}>
+              <div style={{ fontWeight: 600, color: '#0f172a' }}>{w.name}</div>
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{w.slug}</div>
+            </td>
+            <td style={{ padding: '12px 16px' }}>
+              <span style={{ fontFamily: 'monospace', background: '#eff6ff', color: '#2563eb', padding: '2px 8px', borderRadius: 4, fontSize: 12, fontWeight: 700 }}>{w.code_prefix || 'WRI'}</span>
+            </td>
+            <td style={{ padding: '12px 16px', color: '#475569' }}>{w.member_count}</td>
+            <td style={{ padding: '12px 16px', color: '#475569' }}>{w.project_count}</td>
+            <td style={{ padding: '12px 16px' }}>
+              <button onClick={() => openEdit(w)} style={{ border: '1px solid #e2e8f0', background: '#fff', padding: '4px 10px', borderRadius: 5, fontSize: 12, color: '#475569', cursor: 'pointer', marginRight: 6 }}>Edit</button>
+              {w.project_count === 0 && (
+                <button onClick={() => del(w)} style={{ border: '1px solid #fecaca', background: '#fff', padding: '4px 10px', borderRadius: 5, fontSize: 12, color: '#ef4444', cursor: 'pointer' }}>Delete</button>
+              )}
+            </td>
+          </tr>
+        ))}
+      </TableShell>
+
+      {showModal && (
+        <Modal title={editing ? `Edit · ${editing.name}` : 'New Workspace'} onClose={() => setShowModal(false)}>
+          <form onSubmit={submit}>
+            <Field label="Workspace Name" required>
+              <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Research & Insights" style={iStyle} required autoFocus />
+            </Field>
+            <Field label="Project Code Prefix" required>
+              <input value={form.code_prefix} onChange={e => setForm({ ...form, code_prefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') })}
+                placeholder="e.g. WRI, MKT, FIN" maxLength={6} style={iStyle} required />
+              <p style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>2–6 uppercase letters. Projects will be numbered WRI-001, MKT-001, etc.</p>
+            </Field>
+            {error && <div style={{ color: '#ef4444', fontSize: 13, marginBottom: 12, padding: '8px 12px', background: '#fef2f2', borderRadius: 6 }}>{error}</div>}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
+              <button type="button" onClick={() => setShowModal(false)} style={{ padding: '9px 16px', border: '1px solid #e2e8f0', background: '#fff', borderRadius: 7, fontSize: 13.5, cursor: 'pointer' }}>Cancel</button>
+              <button type="submit" disabled={saving} style={{ padding: '9px 18px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>
+                {saving ? 'Saving…' : editing ? 'Save Changes' : 'Create Workspace'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
+const BASE_TABS = [
   { id: 'project-types', label: 'Project Types',     Component: ProjectTypesTab },
   { id: 'users',         label: 'Users',              Component: UsersTab },
   { id: 'clients',       label: 'Clients & Contacts', Component: ClientsTab },
 ]
 
 export default function Admin() {
+  const { user } = useAuth()
+  const isSuperAdmin = user?.globalRole === 'super_admin'
+  const TABS = isSuperAdmin
+    ? [{ id: 'workspaces', label: 'Workspaces', Component: WorkspacesTab }, ...BASE_TABS]
+    : BASE_TABS
+
   const [tab, setTab] = useState('project-types')
-  const { Component } = TABS.find(t => t.id === tab)
+  const found = TABS.find(t => t.id === tab) || TABS[0]
+  const { Component } = found
 
   return (
     <div>
