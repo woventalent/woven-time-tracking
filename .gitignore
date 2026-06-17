@@ -1,0 +1,7 @@
+node_modules/
+dist/
+timetracking.db
+.env
+uploads/
+*.db-shm
+*.db-wal
