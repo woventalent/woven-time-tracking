@@ -162,6 +162,8 @@ ensureColumn('projects',           'project_type_id',      'INTEGER REFERENCES p
 ensureColumn('projects',           'budgeted_hours',       'REAL')
 ensureColumn('projects',           'requestor_contact_id', 'INTEGER REFERENCES contacts(id)')
 ensureColumn('timesheet_entries',  'user_id',              'INTEGER REFERENCES users(id)')
+ensureColumn('projects',           'report_initiated',     'DATE')
+ensureColumn('projects',           'report_delivered',     'DATE')
 
 // ── Seed defaults ─────────────────────────────────────────────────────────────
 db.exec(`INSERT OR IGNORE INTO workspaces (id, name, slug)
@@ -550,22 +552,21 @@ app.get('/api/projects', (req, res) => {
 })
 
 app.post('/api/projects', (req, res) => {
-  const { name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours } = req.body
+  const { name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours, report_initiated, report_delivered } = req.body
   if (!name?.trim()) return res.status(400).json({ error: 'Project name is required' })
   const code = nextProjectCode(req.workspaceId)
   const r = db.prepare(
-    'INSERT INTO projects (workspace_id, project_code, name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(req.workspaceId, code, name.trim(), project_type_id || null, request_date || null, requestor_contact_id || null, client_id || null, budgeted_hours || null)
-  // Auto-add creator as project member
+    'INSERT INTO projects (workspace_id, project_code, name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours, report_initiated, report_delivered) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(req.workspaceId, code, name.trim(), project_type_id || null, request_date || null, requestor_contact_id || null, client_id || null, budgeted_hours || null, report_initiated || null, report_delivered || null)
   db.prepare('INSERT OR IGNORE INTO project_members (project_id, user_id) VALUES (?, ?)').run(r.lastInsertRowid, req.userId)
   res.json({ id: r.lastInsertRowid, project_code: code, name: name.trim() })
 })
 
 app.put('/api/projects/:id', (req, res) => {
-  const { name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours, status } = req.body
+  const { name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours, status, report_initiated, report_delivered } = req.body
   db.prepare(
-    'UPDATE projects SET name=?, project_type_id=?, request_date=?, requestor_contact_id=?, client_id=?, budgeted_hours=?, status=? WHERE id=? AND workspace_id=?'
-  ).run(name, project_type_id || null, request_date || null, requestor_contact_id || null, client_id || null, budgeted_hours || null, status || 'active', req.params.id, req.workspaceId)
+    'UPDATE projects SET name=?, project_type_id=?, request_date=?, requestor_contact_id=?, client_id=?, budgeted_hours=?, status=?, report_initiated=?, report_delivered=? WHERE id=? AND workspace_id=?'
+  ).run(name, project_type_id || null, request_date || null, requestor_contact_id || null, client_id || null, budgeted_hours || null, status || 'active', report_initiated || null, report_delivered || null, req.params.id, req.workspaceId)
   res.json({ success: true })
 })
 
@@ -692,15 +693,16 @@ app.get('/api/reports/by-project', (req, res) => {
   const dateParams = from && to ? [from, to] : from ? [from] : []
   res.json(db.prepare(`
     SELECT p.project_code, p.name AS project_name, p.budgeted_hours,
+           p.report_initiated, p.report_delivered,
            c.name AS client_name, pt.name AS type_name, pt.color AS type_color,
-           COALESCE(SUM(te.hours), 0)          AS total_hours,
-           COUNT(DISTINCT te.id)               AS entry_count,
-           COUNT(DISTINCT te.user_id)          AS user_count,
-           ROUND(COALESCE(SUM(te.hours),0) * 100.0 / NULLIF(p.budgeted_hours,0), 1) AS budget_pct
+           COALESCE(SUM(te.hours), 0) AS total_hours,
+           ROUND(COALESCE(SUM(te.hours),0) * 100.0 / NULLIF(p.budgeted_hours,0), 1) AS budget_pct,
+           GROUP_CONCAT(DISTINCT u.name) AS users_assigned
     FROM projects p
-    LEFT JOIN clients c           ON c.id  = p.client_id
-    LEFT JOIN project_types pt    ON pt.id = p.project_type_id
+    LEFT JOIN clients c            ON c.id  = p.client_id
+    LEFT JOIN project_types pt     ON pt.id = p.project_type_id
     LEFT JOIN timesheet_entries te ON te.project_id = p.id ${dateFilter}
+    LEFT JOIN users u              ON u.id  = te.user_id
     WHERE p.workspace_id = ?
     GROUP BY p.id ORDER BY total_hours DESC
   `).all(...dateParams, req.workspaceId))

@@ -128,7 +128,7 @@ export default function Projects({ onLogTime }) {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
           <thead>
             <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-              {['Code', 'Project Name', 'Type', 'Client', 'Requestor', 'Request Date', 'Budget / Hours', 'Status', ''].map(h => (
+              {['Code', 'Project Name', 'Type', 'Report Initiated', 'Report Delivered', 'Client', 'Requestor', 'Request Date', 'Budget / Hours', 'Status', ''].map(h => (
                 <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
@@ -160,6 +160,12 @@ export default function Projects({ onLogTime }) {
                     {p.type_name
                       ? <span style={{ background: (p.type_color || '#64748b') + '22', color: p.type_color || '#64748b', fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20, border: `1px solid ${(p.type_color || '#64748b')}44`, whiteSpace: 'nowrap' }}>{p.type_name}</span>
                       : <span style={{ color: '#cbd5e1' }}>—</span>}
+                  </td>
+                  <td style={{ padding: '13px 16px', color: '#475569', whiteSpace: 'nowrap' }}>
+                    {p.report_initiated ? new Date(p.report_initiated + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : <span style={{ color: '#cbd5e1' }}>—</span>}
+                  </td>
+                  <td style={{ padding: '13px 16px', color: '#475569', whiteSpace: 'nowrap' }}>
+                    {p.report_delivered ? new Date(p.report_delivered + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : <span style={{ color: '#cbd5e1' }}>—</span>}
                   </td>
                   <td style={{ padding: '13px 16px', color: '#475569' }}>{p.client_name || <span style={{ color: '#cbd5e1' }}>—</span>}</td>
                   <td style={{ padding: '13px 16px' }}>
@@ -232,6 +238,8 @@ function ProjectModal({ project, clients, projectTypes, onSave, onClose }) {
     client_id:            project?.client_id            ?? '',
     budgeted_hours:       project?.budgeted_hours        ?? '',
     status:               project?.status               ?? 'active',
+    report_initiated:     project?.report_initiated     ?? '',
+    report_delivered:     project?.report_delivered     ?? '',
   })
   const [contacts, setContacts] = useState([])
   const [error,    setError]    = useState('')
@@ -250,6 +258,12 @@ function ProjectModal({ project, clients, projectTypes, onSave, onClose }) {
   async function submit(e) {
     e.preventDefault()
     setError('')
+    if (form.report_initiated && form.request_date && form.report_initiated < form.request_date)
+      return setError('Report Initiated cannot be before Request Date')
+    if (form.report_delivered && form.request_date && form.report_delivered < form.request_date)
+      return setError('Report Delivered cannot be before Request Date')
+    if (form.report_delivered && form.report_initiated && form.report_delivered < form.report_initiated)
+      return setError('Report Delivered cannot be before Report Initiated')
     setSaving(true)
     try {
       await onSave(form)
@@ -280,6 +294,16 @@ function ProjectModal({ project, clients, projectTypes, onSave, onClose }) {
               <option value="on_hold">On Hold</option>
               <option value="cancelled">Cancelled</option>
             </select>
+          </Field>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Field label="Report Initiated">
+            <input type="date" value={form.report_initiated} onChange={e => setForm({ ...form, report_initiated: e.target.value })} style={iStyle}
+              min={form.request_date || undefined} />
+          </Field>
+          <Field label="Report Delivered">
+            <input type="date" value={form.report_delivered} onChange={e => setForm({ ...form, report_delivered: e.target.value })} style={iStyle}
+              min={form.report_initiated || form.request_date || undefined} />
           </Field>
         </div>
         <Field label="Client">

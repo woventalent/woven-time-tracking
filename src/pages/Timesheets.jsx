@@ -20,44 +20,13 @@ function Field({ label, required, children }) {
 
 function today() { return new Date().toISOString().split('T')[0] }
 
-// Searchable project select — shows only projects user is allocated to
-function ProjectSelect({ projects, value, onChange }) {
-  const [q, setQ] = useState('')
-  const filtered = projects.filter(p =>
-    !q || p.project_code.toLowerCase().includes(q.toLowerCase()) ||
-    p.name.toLowerCase().includes(q.toLowerCase()) ||
-    (p.client_name || '').toLowerCase().includes(q.toLowerCase())
-  )
-  return (
-    <div>
-      <input
-        value={q} onChange={e => { setQ(e.target.value); onChange('') }}
-        placeholder="Type to search projects…"
-        style={{ ...iStyle, marginBottom: 6 }}
-      />
-      <select value={value} onChange={e => onChange(e.target.value)} style={{ ...iStyle, height: 110 }} required size={4}>
-        <option value="">— select a project —</option>
-        {filtered.map(p => (
-          <option key={p.id} value={p.id}>{p.project_code}  —  {p.name}{p.client_name ? `  (${p.client_name})` : ''}</option>
-        ))}
-      </select>
-      {filtered.length === 0 && q && (
-        <p style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>No projects match "{q}"</p>
-      )}
-      {projects.length === 0 && (
-        <p style={{ fontSize: 12, color: '#f59e0b', marginTop: 4 }}>You have no projects assigned. Ask an admin to allocate you to a project.</p>
-      )}
-    </div>
-  )
-}
-
 export default function Timesheets({ initialProjectId }) {
   const [entries,   setEntries]   = useState([])
   const [projects,  setProjects]  = useState([])  // only assigned projects
   const [filters,   setFilters]   = useState({ project_id: '', from: '', to: '' })
   const [showModal, setShowModal] = useState(false)
   const [editing,   setEditing]   = useState(null)
-  const [form,      setForm]      = useState({ project_id: '', date: today(), hours: '', description: '' })
+  const [form,      setForm]      = useState({ client_id: '', project_id: '', date: today(), hours: '', description: '' })
   const [error,     setError]     = useState('')
   const [saving,    setSaving]    = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -66,8 +35,9 @@ export default function Timesheets({ initialProjectId }) {
     api.get('/projects?assigned=true').then(ps => {
       setProjects(ps)
       if (initialProjectId) {
+        const proj = ps.find(p => p.id === initialProjectId)
         setEditing(null)
-        setForm({ project_id: String(initialProjectId), date: today(), hours: '', description: '' })
+        setForm({ client_id: proj?.client_id ? String(proj.client_id) : '', project_id: String(initialProjectId), date: today(), hours: '', description: '' })
         setError('')
         setShowModal(true)
       }
@@ -83,14 +53,15 @@ export default function Timesheets({ initialProjectId }) {
 
   function openNew() {
     setEditing(null)
-    setForm({ project_id: '', date: today(), hours: '', description: '' })
+    setForm({ client_id: '', project_id: '', date: today(), hours: '', description: '' })
     setError('')
     setShowModal(true)
   }
 
   function openEdit(entry) {
     setEditing(entry)
-    setForm({ project_id: entry.project_id, date: entry.date, hours: entry.hours, description: entry.description || '' })
+    const proj = projects.find(p => p.id === entry.project_id)
+    setForm({ client_id: proj?.client_id ? String(proj.client_id) : '', project_id: String(entry.project_id), date: entry.date, hours: entry.hours, description: entry.description || '' })
     setError('')
     setShowModal(true)
   }
@@ -211,45 +182,63 @@ export default function Timesheets({ initialProjectId }) {
       </div>
 
       {/* Log Time Modal */}
-      {showModal && (
-        <Modal title={editing ? 'Edit Time Entry' : 'Log Time'} onClose={() => setShowModal(false)} width={520}>
-          <form onSubmit={submit}>
-            <Field label="Project" required>
-              <ProjectSelect
-                projects={projects}
-                value={form.project_id}
-                onChange={v => setForm({ ...form, project_id: v })}
-              />
-            </Field>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <Field label="Date" required>
-                <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={iStyle} required />
+      {showModal && (() => {
+        const clients = [...new Map(
+          projects.filter(p => p.client_id).map(p => [p.client_id, { id: p.client_id, name: p.client_name }])
+        ).values()].sort((a, b) => a.name.localeCompare(b.name))
+        const filteredProjects = form.client_id
+          ? projects.filter(p => String(p.client_id) === form.client_id)
+          : projects
+        return (
+          <Modal title={editing ? 'Edit Time Entry' : 'Log Time'} onClose={() => setShowModal(false)} width={520}>
+            <form onSubmit={submit}>
+              <Field label="Client">
+                <select value={form.client_id} onChange={e => setForm({ ...form, client_id: e.target.value, project_id: '' })} style={iStyle}>
+                  <option value="">All clients</option>
+                  {clients.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+                </select>
               </Field>
-              <Field label="Hours" required>
-                <input
-                  type="number" min="0.25" max="24" step="0.25"
-                  value={form.hours} onChange={e => setForm({ ...form, hours: e.target.value })}
-                  placeholder="e.g. 2.5" style={iStyle} required
+              <Field label="Project" required>
+                <select value={form.project_id} onChange={e => setForm({ ...form, project_id: e.target.value })} style={iStyle} required>
+                  <option value="">— select a project —</option>
+                  {filteredProjects.map(p => (
+                    <option key={p.id} value={String(p.id)}>{p.project_code} — {p.name}</option>
+                  ))}
+                </select>
+                {filteredProjects.length === 0 && (
+                  <p style={{ fontSize: 12, color: '#f59e0b', marginTop: 4 }}>You have no projects assigned. Ask an admin to allocate you to a project.</p>
+                )}
+              </Field>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <Field label="Date" required>
+                  <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={iStyle} required />
+                </Field>
+                <Field label="Hours" required>
+                  <input
+                    type="number" min="0.25" max="24" step="0.25"
+                    value={form.hours} onChange={e => setForm({ ...form, hours: e.target.value })}
+                    placeholder="e.g. 2.5" style={iStyle} required
+                  />
+                </Field>
+              </div>
+              <Field label="Description" required>
+                <textarea
+                  value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
+                  placeholder="What did you work on?"
+                  rows={3} style={{ ...iStyle, resize: 'vertical' }} required
                 />
               </Field>
-            </div>
-            <Field label="Description">
-              <textarea
-                value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
-                placeholder="What did you work on?"
-                rows={3} style={{ ...iStyle, resize: 'vertical' }}
-              />
-            </Field>
-            {error && <div style={{ color: '#ef4444', fontSize: 13, marginBottom: 12, padding: '8px 12px', background: '#fef2f2', borderRadius: 6 }}>{error}</div>}
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
-              <button type="button" onClick={() => setShowModal(false)} style={{ padding: '9px 16px', border: '1px solid #e2e8f0', background: '#fff', borderRadius: 7, fontSize: 13.5, cursor: 'pointer' }}>Cancel</button>
-              <button type="submit" disabled={saving} style={{ padding: '9px 18px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>
-                {saving ? 'Saving…' : editing ? 'Save Changes' : 'Log Time'}
-              </button>
-            </div>
-          </form>
-        </Modal>
-      )}
+              {error && <div style={{ color: '#ef4444', fontSize: 13, marginBottom: 12, padding: '8px 12px', background: '#fef2f2', borderRadius: 6 }}>{error}</div>}
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
+                <button type="button" onClick={() => setShowModal(false)} style={{ padding: '9px 16px', border: '1px solid #e2e8f0', background: '#fff', borderRadius: 7, fontSize: 13.5, cursor: 'pointer' }}>Cancel</button>
+                <button type="submit" disabled={saving} style={{ padding: '9px 18px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>
+                  {saving ? 'Saving…' : editing ? 'Save Changes' : 'Log Time'}
+                </button>
+              </div>
+            </form>
+          </Modal>
+        )
+      })()}
     </div>
   )
 }

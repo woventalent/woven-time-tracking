@@ -29,6 +29,21 @@ function Bar({ pct, color }) {
   )
 }
 
+function businessDays(start, end) {
+  if (!start || !end) return null
+  const d1 = new Date(start + 'T00:00:00')
+  const d2 = new Date(end   + 'T00:00:00')
+  if (d2 < d1) return null
+  let count = 0
+  const cur = new Date(d1)
+  while (cur <= d2) {
+    const day = cur.getDay()
+    if (day !== 0 && day !== 6) count++
+    cur.setDate(cur.getDate() + 1)
+  }
+  return count
+}
+
 function BudgetProgress({ logged, budgeted, pct }) {
   if (!budgeted) return <span style={{ fontSize: 12, color: '#94a3b8' }}>—</span>
   const safe  = Math.min(pct ?? 0, 100)
@@ -106,7 +121,7 @@ export default function Reports() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                {['Project', 'Type', 'Client', 'Hours Logged', 'Budget', 'Entries', 'Users', 'Share of Total'].map(h => (
+                {['Project', 'Type', 'Client', 'Hours Logged', 'Budget', 'Users Assigned', 'TAT (days)', 'Share of Total'].map(h => (
                   <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -116,6 +131,8 @@ export default function Reports() {
                 <tr><td colSpan={8} style={{ padding: '48px', textAlign: 'center', color: '#94a3b8' }}>No data yet</td></tr>
               ) : byProject.map((r, i) => {
                 const pct = totalHours > 0 ? r.total_hours / totalHours * 100 : 0
+                const tat = businessDays(r.report_initiated, r.report_delivered)
+                const userNames = r.users_assigned ? r.users_assigned.split(',') : []
                 return (
                   <tr key={r.project_code} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
                     <td style={{ padding: '13px 16px' }}>
@@ -132,8 +149,18 @@ export default function Reports() {
                     <td style={{ padding: '13px 16px' }}>
                       <BudgetProgress logged={r.total_hours} budgeted={r.budgeted_hours} pct={r.budget_pct} />
                     </td>
-                    <td style={{ padding: '13px 16px', color: '#64748b' }}>{r.entry_count}</td>
-                    <td style={{ padding: '13px 16px', color: '#64748b' }}>{r.user_count}</td>
+                    <td style={{ padding: '13px 16px', maxWidth: 180 }}>
+                      {userNames.length > 0
+                        ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            {userNames.map(n => (
+                              <span key={n} style={{ background: '#f1f5f9', color: '#475569', fontSize: 11, padding: '2px 7px', borderRadius: 10, whiteSpace: 'nowrap' }}>{n.trim()}</span>
+                            ))}
+                          </div>
+                        : <span style={{ color: '#cbd5e1' }}>—</span>}
+                    </td>
+                    <td style={{ padding: '13px 16px', color: tat != null ? '#0f172a' : '#cbd5e1', fontWeight: tat != null ? 600 : 400 }}>
+                      {tat != null ? `${tat}d` : '—'}
+                    </td>
                     <td style={{ padding: '13px 16px', minWidth: 160 }}><Bar pct={pct} color="#2563eb" /></td>
                   </tr>
                 )
