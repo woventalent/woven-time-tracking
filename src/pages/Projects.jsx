@@ -128,7 +128,7 @@ export default function Projects({ onLogTime }) {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
           <thead>
             <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-              {['Code', 'Project Name', 'Type', 'Report Initiated', 'Report Delivered', 'Client', 'Requestor', 'Request Date', 'Budget / Hours', 'Status', ''].map(h => (
+              {['Code', 'Project Name', 'Type', 'Request Date', 'Client', 'Requestor', 'Budget / Hours', 'Status', 'Report Initiated', 'Report Delivered', ''].map(h => (
                 <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
@@ -162,10 +162,7 @@ export default function Projects({ onLogTime }) {
                       : <span style={{ color: '#cbd5e1' }}>—</span>}
                   </td>
                   <td style={{ padding: '13px 16px', color: '#475569', whiteSpace: 'nowrap' }}>
-                    {p.report_initiated ? new Date(p.report_initiated + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : <span style={{ color: '#cbd5e1' }}>—</span>}
-                  </td>
-                  <td style={{ padding: '13px 16px', color: '#475569', whiteSpace: 'nowrap' }}>
-                    {p.report_delivered ? new Date(p.report_delivered + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : <span style={{ color: '#cbd5e1' }}>—</span>}
+                    {p.request_date ? new Date(p.request_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : <span style={{ color: '#cbd5e1' }}>—</span>}
                   </td>
                   <td style={{ padding: '13px 16px', color: '#475569' }}>{p.client_name || <span style={{ color: '#cbd5e1' }}>—</span>}</td>
                   <td style={{ padding: '13px 16px' }}>
@@ -176,9 +173,6 @@ export default function Projects({ onLogTime }) {
                       </>
                     ) : <span style={{ color: '#cbd5e1' }}>—</span>}
                   </td>
-                  <td style={{ padding: '13px 16px', color: '#475569', whiteSpace: 'nowrap' }}>
-                    {p.request_date ? new Date(p.request_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : <span style={{ color: '#cbd5e1' }}>—</span>}
-                  </td>
                   <td style={{ padding: '13px 16px' }}>
                     <BudgetBar logged={p.total_hours} budgeted={p.budgeted_hours} pct={p.budget_pct} />
                   </td>
@@ -186,6 +180,12 @@ export default function Projects({ onLogTime }) {
                     <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: sc.bg, color: sc.fg }}>
                       {p.status.replace('_', ' ')}
                     </span>
+                  </td>
+                  <td style={{ padding: '13px 16px', color: '#475569', whiteSpace: 'nowrap' }}>
+                    {p.report_initiated ? new Date(p.report_initiated + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : <span style={{ color: '#cbd5e1' }}>—</span>}
+                  </td>
+                  <td style={{ padding: '13px 16px', color: '#475569', whiteSpace: 'nowrap' }}>
+                    {p.report_delivered ? new Date(p.report_delivered + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : <span style={{ color: '#cbd5e1' }}>—</span>}
                   </td>
                   <td style={{ padding: '13px 16px', whiteSpace: 'nowrap' }}>
                     <button onClick={e => { e.stopPropagation(); onLogTime && onLogTime(p.id) }} style={{ border: '1px solid #bfdbfe', background: '#eff6ff', padding: '4px 10px', borderRadius: 5, fontSize: 12, color: '#2563eb', cursor: 'pointer', marginRight: 6, fontWeight: 600 }}>

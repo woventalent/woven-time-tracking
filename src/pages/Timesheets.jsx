@@ -69,6 +69,12 @@ export default function Timesheets({ initialProjectId }) {
   async function submit(ev) {
     ev.preventDefault()
     setError('')
+    const selectedProject = projects.find(p => String(p.id) === form.project_id)
+    if (selectedProject?.request_date && form.date < selectedProject.request_date) {
+      const formatted = new Date(selectedProject.request_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+      setError(`Date cannot be before the project Request Date (${formatted})`)
+      return
+    }
     setSaving(true)
     try {
       if (editing) {
@@ -189,6 +195,8 @@ export default function Timesheets({ initialProjectId }) {
         const filteredProjects = form.client_id
           ? projects.filter(p => String(p.client_id) === form.client_id)
           : projects
+        const selectedProject = projects.find(p => String(p.id) === form.project_id)
+        const minDate = selectedProject?.request_date || undefined
         return (
           <Modal title={editing ? 'Edit Time Entry' : 'Log Time'} onClose={() => setShowModal(false)} width={520}>
             <form onSubmit={submit}>
@@ -211,7 +219,7 @@ export default function Timesheets({ initialProjectId }) {
               </Field>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <Field label="Date" required>
-                  <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={iStyle} required />
+                  <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={iStyle} required min={minDate} />
                 </Field>
                 <Field label="Hours" required>
                   <input

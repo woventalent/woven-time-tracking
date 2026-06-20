@@ -121,16 +121,15 @@ export default function Reports() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                {['Project', 'Type', 'Client', 'Hours Logged', 'Budget', 'Users Assigned', 'TAT (days)', 'Share of Total'].map(h => (
+                {['Project', 'Type', 'Client', 'Hours Logged', 'Budget', 'Users Assigned', 'TAT (days)'].map(h => (
                   <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {byProject.length === 0 ? (
-                <tr><td colSpan={8} style={{ padding: '48px', textAlign: 'center', color: '#94a3b8' }}>No data yet</td></tr>
+                <tr><td colSpan={7} style={{ padding: '48px', textAlign: 'center', color: '#94a3b8' }}>No data yet</td></tr>
               ) : byProject.map((r, i) => {
-                const pct = totalHours > 0 ? r.total_hours / totalHours * 100 : 0
                 const tat = businessDays(r.report_initiated, r.report_delivered)
                 const userNames = r.users_assigned ? r.users_assigned.split(',') : []
                 return (
@@ -161,7 +160,6 @@ export default function Reports() {
                     <td style={{ padding: '13px 16px', color: tat != null ? '#0f172a' : '#cbd5e1', fontWeight: tat != null ? 600 : 400 }}>
                       {tat != null ? `${tat}d` : '—'}
                     </td>
-                    <td style={{ padding: '13px 16px', minWidth: 160 }}><Bar pct={pct} color="#2563eb" /></td>
                   </tr>
                 )
               })}
@@ -171,7 +169,7 @@ export default function Reports() {
                 <tr style={{ background: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
                   <td colSpan={3} style={{ padding: '10px 16px', fontWeight: 600, color: '#475569', fontSize: 13 }}>Total</td>
                   <td style={{ padding: '10px 16px', fontWeight: 800, color: '#0f172a', fontSize: 14 }}>{totalHours.toFixed(1)}h</td>
-                  <td colSpan={4} />
+                  <td colSpan={3} />
                 </tr>
               </tfoot>
             )}
@@ -180,16 +178,15 @@ export default function Reports() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                {['User', 'Total Hours', 'Entries', 'Projects', 'Share of Total'].map(h => (
+                {['User', 'Total Hours', 'Entries', 'Projects'].map(h => (
                   <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {byUser.length === 0 ? (
-                <tr><td colSpan={5} style={{ padding: '48px', textAlign: 'center', color: '#94a3b8' }}>No data yet</td></tr>
+                <tr><td colSpan={4} style={{ padding: '48px', textAlign: 'center', color: '#94a3b8' }}>No data yet</td></tr>
               ) : byUser.map((u, i) => {
-                const pct = totalHours > 0 ? u.total_hours / totalHours * 100 : 0
                 return (
                   <tr key={u.email} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
                     <td style={{ padding: '13px 16px' }}>
@@ -206,7 +203,6 @@ export default function Reports() {
                     <td style={{ padding: '13px 16px', fontWeight: 700, color: '#0f172a' }}>{u.total_hours.toFixed(1)}h</td>
                     <td style={{ padding: '13px 16px', color: '#64748b' }}>{u.entry_count}</td>
                     <td style={{ padding: '13px 16px', color: '#64748b' }}>{u.project_count}</td>
-                    <td style={{ padding: '13px 16px', minWidth: 160 }}><Bar pct={pct} color="#9333ea" /></td>
                   </tr>
                 )
               })}
@@ -216,7 +212,7 @@ export default function Reports() {
                 <tr style={{ background: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
                   <td style={{ padding: '10px 16px', fontWeight: 600, color: '#475569', fontSize: 13 }}>Total</td>
                   <td style={{ padding: '10px 16px', fontWeight: 800, color: '#0f172a', fontSize: 14 }}>{totalHours.toFixed(1)}h</td>
-                  <td colSpan={3} />
+                  <td colSpan={2} />
                 </tr>
               </tfoot>
             )}
