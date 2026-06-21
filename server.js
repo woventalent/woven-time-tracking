@@ -4,7 +4,7 @@ import multer from 'multer'
 import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
-import { existsSync, mkdirSync } from 'fs'
+import { existsSync, mkdirSync, unlinkSync } from 'fs'
 import { randomUUID, randomBytes } from 'crypto'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -504,9 +504,11 @@ app.get('/api/workspace-users', (req, res) => {
       COUNT(DISTINCT pm.project_id) as project_count
     FROM users u
     JOIN workspace_members wm ON wm.user_id = u.id AND wm.workspace_id = ?
-    LEFT JOIN project_members pm ON pm.user_id = u.id
+    LEFT JOIN project_members pm
+      ON pm.user_id = u.id
+      AND pm.project_id IN (SELECT id FROM projects WHERE workspace_id = ?)
     GROUP BY u.id ORDER BY u.name
-  `).all(req.workspaceId))
+  `).all(req.workspaceId, req.workspaceId))
 })
 
 app.post('/api/workspace-users', (req, res) => {
@@ -707,7 +709,14 @@ app.get('/api/projects/:id/documents/:docId/download', (req, res) => {
 })
 
 app.delete('/api/projects/:id/documents/:docId', (req, res) => {
+  const doc = db.prepare(`
+    SELECT pd.filename FROM project_documents pd
+    JOIN projects p ON p.id = pd.project_id AND p.workspace_id = ?
+    WHERE pd.id = ? AND pd.project_id = ?
+  `).get(req.workspaceId, req.params.docId, req.params.id)
+  if (!doc) return res.status(404).json({ error: 'Not found' })
   db.prepare('DELETE FROM project_documents WHERE id = ? AND project_id = ?').run(req.params.docId, req.params.id)
+  try { unlinkSync(join(UPLOAD_DIR, doc.filename)) } catch (_) {}
   res.json({ success: true })
 })
 
@@ -759,8 +768,8 @@ app.delete('/api/timesheets/:id', (req, res) => {
 
 app.get('/api/reports/by-project', (req, res) => {
   const { from, to } = req.query
-  const dateFilter = from && to ? 'AND te.date BETWEEN ? AND ?' : from ? 'AND te.date >= ?' : ''
-  const dateParams = from && to ? [from, to] : from ? [from] : []
+  const dateFilter = from && to ? 'AND te.date BETWEEN ? AND ?' : from ? 'AND te.date >= ?' : to ? 'AND te.date <= ?' : ''
+  const dateParams = from && to ? [from, to] : from ? [from] : to ? [to] : []
   res.json(db.prepare(`
     SELECT p.project_code, p.name AS project_name, p.budgeted_hours,
            p.report_initiated, p.report_delivered,
@@ -780,8 +789,8 @@ app.get('/api/reports/by-project', (req, res) => {
 
 app.get('/api/reports/by-user', (req, res) => {
   const { from, to } = req.query
-  const dateFilter = from && to ? 'AND te.date BETWEEN ? AND ?' : from ? 'AND te.date >= ?' : ''
-  const dateParams = from && to ? [from, to] : from ? [from] : []
+  const dateFilter = from && to ? 'AND te.date BETWEEN ? AND ?' : from ? 'AND te.date >= ?' : to ? 'AND te.date <= ?' : ''
+  const dateParams = from && to ? [from, to] : from ? [from] : to ? [to] : []
   res.json(db.prepare(`
     SELECT u.name AS user_name, u.email,
            COALESCE(SUM(te.hours), 0)    AS total_hours,

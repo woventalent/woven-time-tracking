@@ -136,7 +136,7 @@ export default function Projects({ onLogTime }) {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={9} style={{ padding: '48px 16px', textAlign: 'center', color: '#94a3b8' }}>
+                <td colSpan={11} style={{ padding: '48px 16px', textAlign: 'center', color: '#94a3b8' }}>
                   {search ? 'No projects match your search' : 'No projects yet — create one to get started'}
                 </td>
               </tr>
