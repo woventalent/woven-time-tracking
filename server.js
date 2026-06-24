@@ -22,12 +22,35 @@ const SUPER_ADMIN_EMAILS = new Set(
 const UPLOAD_DIR = join(__dirname, 'uploads')
 mkdirSync(UPLOAD_DIR, { recursive: true })
 
+const ALLOWED_MIME_TYPES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain',
+  'text/csv',
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+])
+
 const upload = multer({
   storage: multer.diskStorage({
     destination: UPLOAD_DIR,
     filename: (_, file, cb) => cb(null, `${randomUUID()}-${file.originalname.replace(/[^\w._-]/g, '_')}`),
   }),
   limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
+  fileFilter: (_, file, cb) => {
+    if (ALLOWED_MIME_TYPES.has(file.mimetype)) {
+      cb(null, true)
+    } else {
+      cb(Object.assign(new Error(`File type not allowed: ${file.mimetype}`), { status: 400 }))
+    }
+  },
 })
 
 // ── Database ──────────────────────────────────────────────────────────────────
@@ -624,6 +647,10 @@ app.get('/api/projects', (req, res) => {
 app.post('/api/projects', (req, res) => {
   const { name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours, report_initiated, report_delivered } = req.body
   if (!name?.trim()) return res.status(400).json({ error: 'Project name is required' })
+  if (budgeted_hours !== undefined && budgeted_hours !== null && budgeted_hours !== '') {
+    const bh = Number(budgeted_hours)
+    if (isNaN(bh) || bh < 0) return res.status(400).json({ error: 'Budgeted hours must be a positive number' })
+  }
   const code = nextProjectCode(req.workspaceId)
   const r = db.prepare(
     'INSERT INTO projects (workspace_id, project_code, name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours, report_initiated, report_delivered) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
@@ -634,6 +661,10 @@ app.post('/api/projects', (req, res) => {
 
 app.put('/api/projects/:id', (req, res) => {
   const { name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours, status, report_initiated, report_delivered } = req.body
+  if (budgeted_hours !== undefined && budgeted_hours !== null && budgeted_hours !== '') {
+    const bh = Number(budgeted_hours)
+    if (isNaN(bh) || bh < 0) return res.status(400).json({ error: 'Budgeted hours must be a positive number' })
+  }
   db.prepare(
     'UPDATE projects SET name=?, project_type_id=?, request_date=?, requestor_contact_id=?, client_id=?, budgeted_hours=?, status=?, report_initiated=?, report_delivered=? WHERE id=? AND workspace_id=?'
   ).run(name, project_type_id || null, request_date || null, requestor_contact_id || null, client_id || null, budgeted_hours || null, status || 'active', report_initiated || null, report_delivered || null, req.params.id, req.workspaceId)
@@ -668,6 +699,8 @@ app.post('/api/projects/:id/members', (req, res) => {
 })
 
 app.delete('/api/projects/:id/members/:userId', (req, res) => {
+  const project = db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId)
+  if (!project) return res.status(404).json({ error: 'Project not found' })
   db.prepare('DELETE FROM project_members WHERE project_id = ? AND user_id = ?').run(req.params.id, req.params.userId)
   res.json({ success: true })
 })
@@ -684,7 +717,12 @@ app.get('/api/projects/:id/documents', (req, res) => {
   `).all(req.params.id))
 })
 
-app.post('/api/projects/:id/documents', upload.single('file'), (req, res) => {
+app.post('/api/projects/:id/documents', (req, res, next) => {
+  upload.single('file')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message })
+    next()
+  })
+}, (req, res) => {
   const project = db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId)
   if (!project) return res.status(404).json({ error: 'Project not found' })
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' })
@@ -707,6 +745,8 @@ app.get('/api/projects/:id/documents/:docId/download', (req, res) => {
 })
 
 app.delete('/api/projects/:id/documents/:docId', (req, res) => {
+  const project = db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId)
+  if (!project) return res.status(404).json({ error: 'Project not found' })
   db.prepare('DELETE FROM project_documents WHERE id = ? AND project_id = ?').run(req.params.docId, req.params.id)
   res.json({ success: true })
 })
@@ -735,18 +775,26 @@ app.get('/api/timesheets', (req, res) => {
 app.post('/api/timesheets', (req, res) => {
   const { project_id, date, hours, description } = req.body
   if (!project_id || !date || !hours) return res.status(400).json({ error: 'Project, date, and hours are required' })
+  const parsedHours = parseFloat(hours)
+  if (isNaN(parsedHours) || parsedHours <= 0 || parsedHours > 24) {
+    return res.status(400).json({ error: 'Hours must be between 0.25 and 24' })
+  }
   const project = db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(project_id, req.workspaceId)
   if (!project) return res.status(404).json({ error: 'Project not found' })
   const r = db.prepare(
     'INSERT INTO timesheet_entries (project_id, user_id, date, hours, description) VALUES (?, ?, ?, ?, ?)'
-  ).run(project_id, req.userId, date, hours, description || null)
+  ).run(project_id, req.userId, date, parsedHours, description || null)
   res.json({ id: r.lastInsertRowid })
 })
 
 app.put('/api/timesheets/:id', (req, res) => {
   const { project_id, date, hours, description } = req.body
+  const parsedHours = parseFloat(hours)
+  if (isNaN(parsedHours) || parsedHours <= 0 || parsedHours > 24) {
+    return res.status(400).json({ error: 'Hours must be between 0.25 and 24' })
+  }
   db.prepare('UPDATE timesheet_entries SET project_id=?, date=?, hours=?, description=? WHERE id=? AND user_id=?')
-    .run(project_id, date, hours, description || null, req.params.id, req.userId)
+    .run(project_id, date, parsedHours, description || null, req.params.id, req.userId)
   res.json({ success: true })
 })
 
@@ -759,8 +807,8 @@ app.delete('/api/timesheets/:id', (req, res) => {
 
 app.get('/api/reports/by-project', (req, res) => {
   const { from, to } = req.query
-  const dateFilter = from && to ? 'AND te.date BETWEEN ? AND ?' : from ? 'AND te.date >= ?' : ''
-  const dateParams = from && to ? [from, to] : from ? [from] : []
+  const dateFilter = from && to ? 'AND te.date BETWEEN ? AND ?' : from ? 'AND te.date >= ?' : to ? 'AND te.date <= ?' : ''
+  const dateParams = from && to ? [from, to] : from ? [from] : to ? [to] : []
   res.json(db.prepare(`
     SELECT p.project_code, p.name AS project_name, p.budgeted_hours,
            p.report_initiated, p.report_delivered,
@@ -780,8 +828,8 @@ app.get('/api/reports/by-project', (req, res) => {
 
 app.get('/api/reports/by-user', (req, res) => {
   const { from, to } = req.query
-  const dateFilter = from && to ? 'AND te.date BETWEEN ? AND ?' : from ? 'AND te.date >= ?' : ''
-  const dateParams = from && to ? [from, to] : from ? [from] : []
+  const dateFilter = from && to ? 'AND te.date BETWEEN ? AND ?' : from ? 'AND te.date >= ?' : to ? 'AND te.date <= ?' : ''
+  const dateParams = from && to ? [from, to] : from ? [from] : to ? [to] : []
   res.json(db.prepare(`
     SELECT u.name AS user_name, u.email,
            COALESCE(SUM(te.hours), 0)    AS total_hours,

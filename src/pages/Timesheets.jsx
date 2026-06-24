@@ -100,6 +100,21 @@ export default function Timesheets({ initialProjectId }) {
   const totalHours = entries.reduce((s, e) => s + e.hours, 0)
   const hasFilters = Object.values(filters).some(Boolean)
 
+  function exportCsv() {
+    const escape = v => {
+      const s = (v == null ? '' : String(v))
+      return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
+    }
+    const header = ['Date', 'Project Code', 'Project Name', 'Client', 'Hours', 'Description']
+    const rows = entries.map(e => [e.date, e.project_code, e.project_name, e.client_name || '', e.hours, e.description || ''])
+    const csv = [header, ...rows].map(r => r.map(escape).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url
+    a.download = `timesheets-${filters.from || 'all'}-${filters.to || 'all'}.csv`
+    a.click(); URL.revokeObjectURL(url)
+  }
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28 }}>
@@ -109,11 +124,19 @@ export default function Timesheets({ initialProjectId }) {
             {entries.length} entr{entries.length !== 1 ? 'ies' : 'y'} &nbsp;·&nbsp; {totalHours.toFixed(1)}h total
           </p>
         </div>
-        <button onClick={openNew} style={{
-          background: '#2563eb', color: '#fff', border: 'none',
-          padding: '10px 18px', borderRadius: 8, fontSize: 14, fontWeight: 600,
-          boxShadow: '0 1px 4px rgba(37,99,235,0.3)', cursor: 'pointer',
-        }}>+ Log Time</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {entries.length > 0 && (
+            <button onClick={exportCsv} style={{
+              background: '#fff', color: '#16a34a', border: '1px solid #16a34a',
+              padding: '10px 14px', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer',
+            }}>↓ Export CSV</button>
+          )}
+          <button onClick={openNew} style={{
+            background: '#2563eb', color: '#fff', border: 'none',
+            padding: '10px 18px', borderRadius: 8, fontSize: 14, fontWeight: 600,
+            boxShadow: '0 1px 4px rgba(37,99,235,0.3)', cursor: 'pointer',
+          }}>+ Log Time</button>
+        </div>
       </div>
 
       {/* Filters */}
