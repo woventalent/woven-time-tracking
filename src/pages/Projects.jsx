@@ -124,8 +124,8 @@ export default function Projects({ onLogTime }) {
         />
       </div>
 
-      <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
+      <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0', overflowX: 'auto' }}>
+        <table style={{ width: '100%', minWidth: 1000, borderCollapse: 'collapse', fontSize: 13.5 }}>
           <thead>
             <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
               {['Code', 'Project Name', 'Type', 'Request Date', 'Client', 'Requestor', 'Budget / Hours', 'Status', 'Report Initiated', 'Report Delivered', ''].map(h => (
@@ -150,12 +150,12 @@ export default function Projects({ onLogTime }) {
                   onMouseEnter={e => e.currentTarget.style.background = '#f0f9ff'}
                   onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? '#fff' : '#fafafa'}
                 >
-                  <td style={{ padding: '13px 16px' }}>
+                  <td style={{ padding: '13px 16px', whiteSpace: 'nowrap' }}>
                     <span style={{ background: '#eff6ff', color: '#2563eb', padding: '3px 8px', borderRadius: 5, fontWeight: 700, fontSize: 12, fontFamily: 'monospace' }}>
                       {p.project_code}
                     </span>
                   </td>
-                  <td style={{ padding: '13px 16px', fontWeight: 600, color: '#0f172a', maxWidth: 200 }}>{p.name}</td>
+                  <td style={{ padding: '13px 16px', fontWeight: 600, color: '#0f172a', whiteSpace: 'nowrap' }}>{p.name}</td>
                   <td style={{ padding: '13px 16px' }}>
                     {p.type_name
                       ? <span style={{ background: (p.type_color || '#64748b') + '22', color: p.type_color || '#64748b', fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20, border: `1px solid ${(p.type_color || '#64748b')}44`, whiteSpace: 'nowrap' }}>{p.type_name}</span>
