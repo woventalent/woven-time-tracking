@@ -38,16 +38,28 @@ export default function Timesheets({ initialProjectId }) {
   const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
-    api.get('/projects?assigned=true').then(ps => {
-      setProjects(ps)
+    async function loadProjects() {
+      const ps = await api.get('/projects?assigned=true')
+      let list = ps
       if (initialProjectId) {
-        const proj = ps.find(p => p.id === initialProjectId)
+        const found = ps.find(p => p.id === initialProjectId)
+        if (!found) {
+          // Project not in user's assigned list — fetch all to get its details
+          const all = await api.get('/projects')
+          const target = all.find(p => p.id === initialProjectId)
+          if (target) list = [...ps, target]
+        }
+        const proj = list.find(p => p.id === initialProjectId)
+        setProjects(list)
         setEditing(null)
         setForm({ client_id: proj?.client_id ? String(proj.client_id) : '', project_id: String(initialProjectId), date: today(), hours: '', description: '' })
         setError('')
         setShowModal(true)
+      } else {
+        setProjects(ps)
       }
-    })
+    }
+    loadProjects()
     if (isAdmin) api.get('/workspace-users').then(setWsUsers)
   }, [initialProjectId, isAdmin])
 
