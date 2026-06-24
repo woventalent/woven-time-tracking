@@ -672,9 +672,10 @@ app.put('/api/projects/:id', (req, res) => {
 })
 
 app.delete('/api/projects/:id', (req, res) => {
-  if (req.userRole !== 'admin') return res.status(403).json({ error: 'Admin only' })
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Admin only' })
   const project = db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId)
   if (!project) return res.status(404).json({ error: 'Project not found' })
+  db.prepare('DELETE FROM timesheet_entries WHERE project_id = ?').run(req.params.id)
   db.prepare('DELETE FROM projects WHERE id = ? AND workspace_id = ?').run(req.params.id, req.workspaceId)
   res.json({ success: true })
 })
