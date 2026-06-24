@@ -192,6 +192,7 @@ ensureColumn('projects',           'report_initiated',     'DATE')
 ensureColumn('projects',           'report_delivered',     'DATE')
 ensureColumn('users',              'global_role',          "TEXT DEFAULT NULL")
 ensureColumn('workspaces',         'code_prefix',          "TEXT DEFAULT 'WRI'")
+ensureColumn('projects',           'description',          'TEXT')
 
 // ── Seed defaults ─────────────────────────────────────────────────────────────
 db.exec(`INSERT OR IGNORE INTO workspaces (id, name, slug)
@@ -645,7 +646,7 @@ app.get('/api/projects', (req, res) => {
 })
 
 app.post('/api/projects', (req, res) => {
-  const { name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours, report_initiated, report_delivered } = req.body
+  const { name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours, report_initiated, report_delivered, description } = req.body
   if (!name?.trim()) return res.status(400).json({ error: 'Project name is required' })
   if (budgeted_hours !== undefined && budgeted_hours !== null && budgeted_hours !== '') {
     const bh = Number(budgeted_hours)
@@ -653,21 +654,21 @@ app.post('/api/projects', (req, res) => {
   }
   const code = nextProjectCode(req.workspaceId)
   const r = db.prepare(
-    'INSERT INTO projects (workspace_id, project_code, name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours, report_initiated, report_delivered) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(req.workspaceId, code, name.trim(), project_type_id || null, request_date || null, requestor_contact_id || null, client_id || null, budgeted_hours || null, report_initiated || null, report_delivered || null)
+    'INSERT INTO projects (workspace_id, project_code, name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours, report_initiated, report_delivered, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(req.workspaceId, code, name.trim(), project_type_id || null, request_date || null, requestor_contact_id || null, client_id || null, budgeted_hours || null, report_initiated || null, report_delivered || null, description || null)
   db.prepare('INSERT OR IGNORE INTO project_members (project_id, user_id) VALUES (?, ?)').run(r.lastInsertRowid, req.userId)
   res.json({ id: r.lastInsertRowid, project_code: code, name: name.trim() })
 })
 
 app.put('/api/projects/:id', (req, res) => {
-  const { name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours, status, report_initiated, report_delivered } = req.body
+  const { name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours, status, report_initiated, report_delivered, description } = req.body
   if (budgeted_hours !== undefined && budgeted_hours !== null && budgeted_hours !== '') {
     const bh = Number(budgeted_hours)
     if (isNaN(bh) || bh < 0) return res.status(400).json({ error: 'Budgeted hours must be a positive number' })
   }
   db.prepare(
-    'UPDATE projects SET name=?, project_type_id=?, request_date=?, requestor_contact_id=?, client_id=?, budgeted_hours=?, status=?, report_initiated=?, report_delivered=? WHERE id=? AND workspace_id=?'
-  ).run(name, project_type_id || null, request_date || null, requestor_contact_id || null, client_id || null, budgeted_hours || null, status || 'active', report_initiated || null, report_delivered || null, req.params.id, req.workspaceId)
+    'UPDATE projects SET name=?, project_type_id=?, request_date=?, requestor_contact_id=?, client_id=?, budgeted_hours=?, status=?, report_initiated=?, report_delivered=?, description=? WHERE id=? AND workspace_id=?'
+  ).run(name, project_type_id || null, request_date || null, requestor_contact_id || null, client_id || null, budgeted_hours || null, status || 'active', report_initiated || null, report_delivered || null, description || null, req.params.id, req.workspaceId)
   res.json({ success: true })
 })
 
@@ -755,7 +756,8 @@ app.delete('/api/projects/:id/documents/:docId', (req, res) => {
 // ── TIMESHEET ENTRIES ─────────────────────────────────────────────────────────
 
 app.get('/api/timesheets', (req, res) => {
-  const { project_id, from, to } = req.query
+  const { project_id, from, to, user_id } = req.query
+  const showAll = req.userRole === 'admin' && req.query.all === 'true'
   let sql = `
     SELECT te.*, p.project_code, p.name AS project_name, c.name AS client_name,
            u.name AS user_name
@@ -763,9 +765,10 @@ app.get('/api/timesheets', (req, res) => {
     JOIN  projects p ON p.id = te.project_id AND p.workspace_id = ?
     LEFT JOIN users u ON u.id = te.user_id
     LEFT JOIN clients c ON c.id = p.client_id
-    WHERE te.user_id = ?
+    WHERE ${showAll ? '1=1' : 'te.user_id = ?'}
   `
-  const params = [req.workspaceId, req.userId]
+  const params = showAll ? [req.workspaceId] : [req.workspaceId, req.userId]
+  if (showAll && user_id) { sql += ' AND te.user_id = ?'; params.push(user_id) }
   if (project_id) { sql += ' AND te.project_id = ?'; params.push(project_id) }
   if (from)       { sql += ' AND te.date >= ?';       params.push(from) }
   if (to)         { sql += ' AND te.date <= ?';       params.push(to) }
@@ -842,6 +845,41 @@ app.get('/api/reports/by-user', (req, res) => {
     LEFT JOIN projects p ON p.id = te.project_id ${dateFilter}
     GROUP BY u.id ORDER BY total_hours DESC
   `).all(req.workspaceId, ...dateParams))
+})
+
+app.get('/api/reports/by-client', (req, res) => {
+  const { from, to } = req.query
+  const dateFilter = from && to ? 'AND te.date BETWEEN ? AND ?' : from ? 'AND te.date >= ?' : ''
+  const dateParams = from && to ? [from, to] : from ? [from] : []
+  res.json(db.prepare(`
+    SELECT c.id AS client_id, c.name AS client_name,
+           COUNT(DISTINCT p.id) AS project_count,
+           COALESCE(SUM(te.hours), 0) AS total_hours,
+           COUNT(DISTINCT te.user_id) AS user_count
+    FROM clients c
+    JOIN projects p ON p.client_id = c.id AND p.workspace_id = ?
+    LEFT JOIN timesheet_entries te ON te.project_id = p.id ${dateFilter}
+    WHERE c.workspace_id = ?
+    GROUP BY c.id ORDER BY total_hours DESC
+  `).all(req.workspaceId, ...dateParams, req.workspaceId))
+})
+
+app.get('/api/reports/summary', (req, res) => {
+  const totalRequested = db.prepare('SELECT COUNT(*) AS n FROM projects WHERE workspace_id = ?').get(req.workspaceId).n
+  const totalCompleted = db.prepare("SELECT COUNT(*) AS n FROM projects WHERE workspace_id = ? AND report_delivered IS NOT NULL").get(req.workspaceId).n
+  const yearMonth = new Date().toISOString().slice(0, 7)
+  const topClient = db.prepare(`
+    SELECT c.name, COUNT(p.id) AS n
+    FROM clients c JOIN projects p ON p.client_id = c.id AND p.workspace_id = ?
+    WHERE strftime('%Y-%m', p.request_date) = ?
+    GROUP BY c.id ORDER BY n DESC LIMIT 1
+  `).get(req.workspaceId, yearMonth)
+  const activeUsers = db.prepare(`
+    SELECT COUNT(DISTINCT te.user_id) AS n
+    FROM timesheet_entries te
+    JOIN projects p ON p.id = te.project_id AND p.workspace_id = ?
+  `).get(req.workspaceId).n
+  res.json({ totalRequested, totalCompleted, topClient: topClient?.name || null, activeUsers })
 })
 
 // ── Static + SPA ──────────────────────────────────────────────────────────────

@@ -240,6 +240,7 @@ function ProjectModal({ project, clients, projectTypes, onSave, onClose }) {
     status:               project?.status               ?? 'active',
     report_initiated:     project?.report_initiated     ?? '',
     report_delivered:     project?.report_delivered     ?? '',
+    description:          project?.description          ?? '',
   })
   const [contacts, setContacts] = useState([])
   const [error,    setError]    = useState('')
@@ -279,6 +280,11 @@ function ProjectModal({ project, clients, projectTypes, onSave, onClose }) {
         <Field label="Project Name" required>
           <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
             placeholder="e.g. Consumer Insights Q3 2025" style={iStyle} required autoFocus />
+        </Field>
+        <Field label="Description">
+          <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
+            placeholder="Brief description of the project scope or objective…"
+            rows={3} style={{ ...iStyle, resize: 'vertical' }} />
         </Field>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <Field label="Project Type">
@@ -447,6 +453,7 @@ function ProjectDetail({ project, onClose, onProjectUpdate }) {
               </div>
               <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#0f172a' }}>{project.name}</h2>
               {project.client_name && <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>{project.client_name}</div>}
+              {project.description && <div style={{ fontSize: 13, color: '#475569', marginTop: 8, lineHeight: 1.5, fontStyle: 'italic' }}>{project.description}</div>}
             </div>
             <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 22, cursor: 'pointer', color: '#94a3b8', lineHeight: 1, padding: '0 0 0 8px' }}>×</button>
           </div>

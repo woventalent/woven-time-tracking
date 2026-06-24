@@ -78,6 +78,8 @@ export default function Reports() {
   const [view,      setView]    = useState('project')
   const [byProject, setByProj]  = useState([])
   const [byUser,    setByUser]  = useState([])
+  const [byClient,  setByClient] = useState([])
+  const [summary,   setSummary]  = useState(null)
   const [from,      setFrom]    = useState('')
   const [to,        setTo]      = useState('')
 
@@ -85,11 +87,11 @@ export default function Reports() {
     const q = new URLSearchParams(Object.fromEntries(Object.entries({ from, to }).filter(([, v]) => v)))
     api.get('/reports/by-project?' + q).then(setByProj)
     api.get('/reports/by-user?'    + q).then(setByUser)
+    api.get('/reports/by-client?'  + q).then(setByClient)
+    api.get('/reports/summary').then(setSummary)
   }, [from, to])
 
-  const totalHours   = byProject.reduce((s, r) => s + r.total_hours, 0)
-  const activeProj   = byProject.filter(r => r.total_hours > 0).length
-  const activeUsers  = byUser.filter(u => u.total_hours > 0).length
+  const totalHours = byProject.reduce((s, r) => s + r.total_hours, 0)
 
   function exportCsv() {
     const suffix = [from, to].filter(Boolean).join('_to_') || 'all'
@@ -118,16 +120,17 @@ export default function Reports() {
       </div>
 
       {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16, marginBottom: 28 }}>
-        <KpiCard value={totalHours.toFixed(1) + 'h'} label="Total Hours Logged"       color="#2563eb" />
-        <KpiCard value={activeProj}                   label="Projects with Time Logged" color="#16a34a" />
-        <KpiCard value={activeUsers}                  label="Team Members Active"       color="#9333ea" />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 28 }}>
+        <KpiCard value={summary?.totalRequested ?? '—'} label="Reports Requested"          color="#2563eb" />
+        <KpiCard value={summary?.totalCompleted ?? '—'} label="Reports Completed"           color="#16a34a" />
+        <KpiCard value={summary?.topClient      ?? '—'} label="Top Client This Month"       color="#f59e0b" />
+        <KpiCard value={summary?.activeUsers    ?? '—'} label="Total Active Users"          color="#9333ea" />
       </div>
 
       {/* Controls */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 18, flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ display: 'flex', borderRadius: 7, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
-          {[['project', 'By Project'], ['user', 'By User']].map(([id, label]) => (
+          {[['project', 'By Project'], ['client', 'By Client'], ['user', 'By User']].map(([id, label]) => (
             <button key={id} onClick={() => setView(id)} style={{
               padding: '8px 16px', border: 'none', fontSize: 13.5, fontWeight: 500,
               background: view === id ? '#2563eb' : '#fff',
@@ -209,6 +212,45 @@ export default function Reports() {
               </tfoot>
             )}
           </table>
+        ) : view === 'client' ? (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
+            <thead>
+              <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                {['Client', 'Projects', 'Hours Logged', 'Active Users'].map(h => (
+                  <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {byClient.length === 0 ? (
+                <tr><td colSpan={4} style={{ padding: '48px', textAlign: 'center', color: '#94a3b8' }}>No data yet</td></tr>
+              ) : byClient.map((c, i) => (
+                <tr key={c.client_id} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
+                  <td style={{ padding: '13px 16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 30, height: 30, borderRadius: 8, background: '#0ea5e9', color: '#fff', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        {c.client_name.charAt(0).toUpperCase()}
+                      </div>
+                      <div style={{ fontWeight: 600, color: '#0f172a' }}>{c.client_name}</div>
+                    </div>
+                  </td>
+                  <td style={{ padding: '13px 16px', color: '#64748b' }}>{c.project_count}</td>
+                  <td style={{ padding: '13px 16px', fontWeight: 700, color: '#0f172a' }}>{c.total_hours.toFixed(1)}h</td>
+                  <td style={{ padding: '13px 16px', color: '#64748b' }}>{c.user_count}</td>
+                </tr>
+              ))}
+            </tbody>
+            {byClient.length > 0 && (
+              <tfoot>
+                <tr style={{ background: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
+                  <td style={{ padding: '10px 16px', fontWeight: 600, color: '#475569', fontSize: 13 }}>Total</td>
+                  <td style={{ padding: '10px 16px', color: '#64748b' }}>{byClient.reduce((s, c) => s + c.project_count, 0)}</td>
+                  <td style={{ padding: '10px 16px', fontWeight: 800, color: '#0f172a', fontSize: 14 }}>{byClient.reduce((s, c) => s + c.total_hours, 0).toFixed(1)}h</td>
+                  <td />
+                </tr>
+              </tfoot>
+            )}
+          </table>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
             <thead>
@@ -221,26 +263,24 @@ export default function Reports() {
             <tbody>
               {byUser.length === 0 ? (
                 <tr><td colSpan={4} style={{ padding: '48px', textAlign: 'center', color: '#94a3b8' }}>No data yet</td></tr>
-              ) : byUser.map((u, i) => {
-                return (
-                  <tr key={u.email} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
-                    <td style={{ padding: '13px 16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#9333ea', color: '#fff', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                          {u.user_name.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <div style={{ fontWeight: 600, color: '#0f172a' }}>{u.user_name}</div>
-                          <div style={{ fontSize: 12, color: '#94a3b8' }}>{u.email}</div>
-                        </div>
+              ) : byUser.map((u, i) => (
+                <tr key={u.email} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
+                  <td style={{ padding: '13px 16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#9333ea', color: '#fff', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        {u.user_name.charAt(0).toUpperCase()}
                       </div>
-                    </td>
-                    <td style={{ padding: '13px 16px', fontWeight: 700, color: '#0f172a' }}>{u.total_hours.toFixed(1)}h</td>
-                    <td style={{ padding: '13px 16px', color: '#64748b' }}>{u.entry_count}</td>
-                    <td style={{ padding: '13px 16px', color: '#64748b' }}>{u.project_count}</td>
-                  </tr>
-                )
-              })}
+                      <div>
+                        <div style={{ fontWeight: 600, color: '#0f172a' }}>{u.user_name}</div>
+                        <div style={{ fontSize: 12, color: '#94a3b8' }}>{u.email}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td style={{ padding: '13px 16px', fontWeight: 700, color: '#0f172a' }}>{u.total_hours.toFixed(1)}h</td>
+                  <td style={{ padding: '13px 16px', color: '#64748b' }}>{u.entry_count}</td>
+                  <td style={{ padding: '13px 16px', color: '#64748b' }}>{u.project_count}</td>
+                </tr>
+              ))}
             </tbody>
             {byUser.length > 0 && (
               <tfoot>

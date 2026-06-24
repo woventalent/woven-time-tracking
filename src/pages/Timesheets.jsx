@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { api } from '../api.js'
 import Modal from '../components/Modal.jsx'
+import { useAuth } from '../contexts/AuthContext.jsx'
 
 const iStyle = {
   width: '100%', padding: '8px 12px', border: '1px solid #cbd5e1',
@@ -21,14 +22,19 @@ function Field({ label, required, children }) {
 function today() { return new Date().toISOString().split('T')[0] }
 
 export default function Timesheets({ initialProjectId }) {
-  const [entries,   setEntries]   = useState([])
-  const [projects,  setProjects]  = useState([])  // only assigned projects
-  const [filters,   setFilters]   = useState({ project_id: '', from: '', to: '' })
-  const [showModal, setShowModal] = useState(false)
-  const [editing,   setEditing]   = useState(null)
-  const [form,      setForm]      = useState({ client_id: '', project_id: '', date: today(), hours: '', description: '' })
-  const [error,     setError]     = useState('')
-  const [saving,    setSaving]    = useState(false)
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+
+  const [entries,    setEntries]   = useState([])
+  const [projects,   setProjects]  = useState([])  // only assigned projects
+  const [wsUsers,    setWsUsers]   = useState([])   // all workspace users (admin only)
+  const [showAll,    setShowAll]   = useState(false) // admin: show all users' entries
+  const [filters,    setFilters]   = useState({ project_id: '', from: '', to: '', user_id: '' })
+  const [showModal,  setShowModal] = useState(false)
+  const [editing,    setEditing]   = useState(null)
+  const [form,       setForm]      = useState({ client_id: '', project_id: '', date: today(), hours: '', description: '' })
+  const [error,      setError]     = useState('')
+  const [saving,     setSaving]    = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
@@ -42,14 +48,15 @@ export default function Timesheets({ initialProjectId }) {
         setShowModal(true)
       }
     })
-  }, [initialProjectId])
+    if (isAdmin) api.get('/workspace-users').then(setWsUsers)
+  }, [initialProjectId, isAdmin])
 
   useEffect(() => {
-    const q = new URLSearchParams(
-      Object.fromEntries(Object.entries(filters).filter(([, v]) => v))
-    )
+    const params = Object.fromEntries(Object.entries(filters).filter(([, v]) => v))
+    if (isAdmin && showAll) params.all = 'true'
+    const q = new URLSearchParams(params)
     api.get('/timesheets?' + q).then(setEntries)
-  }, [filters, refreshKey])
+  }, [filters, showAll, isAdmin, refreshKey])
 
   function openNew() {
     setEditing(null)
@@ -98,7 +105,7 @@ export default function Timesheets({ initialProjectId }) {
   }
 
   const totalHours = entries.reduce((s, e) => s + e.hours, 0)
-  const hasFilters = Object.values(filters).some(Boolean)
+  const hasFilters = Object.values(filters).some(Boolean) || (isAdmin && showAll)
 
   function exportCsv() {
     const escape = v => {
@@ -141,17 +148,30 @@ export default function Timesheets({ initialProjectId }) {
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 18, flexWrap: 'wrap', alignItems: 'center' }}>
+        {isAdmin && (
+          <button onClick={() => { setShowAll(v => !v); setFilters({ project_id: '', from: '', to: '', user_id: '' }) }}
+            style={{ padding: '8px 14px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: showAll ? '#0f172a' : '#fff', color: showAll ? '#fff' : '#475569' }}>
+            {showAll ? 'All Entries' : 'My Entries'}
+          </button>
+        )}
         <select value={filters.project_id} onChange={e => setFilters({ ...filters, project_id: e.target.value })}
           style={{ ...iStyle, maxWidth: 280 }}>
-          <option value="">All My Projects</option>
+          <option value="">{showAll ? 'All Projects' : 'All My Projects'}</option>
           {projects.map(p => <option key={p.id} value={p.id}>{p.project_code} — {p.name}</option>)}
         </select>
+        {isAdmin && showAll && (
+          <select value={filters.user_id} onChange={e => setFilters({ ...filters, user_id: e.target.value })}
+            style={{ ...iStyle, maxWidth: 220 }}>
+            <option value="">All Users</option>
+            {wsUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+        )}
         <input type="date" value={filters.from} onChange={e => setFilters({ ...filters, from: e.target.value })}
           style={{ ...iStyle, maxWidth: 160 }} title="From date" />
         <input type="date" value={filters.to} onChange={e => setFilters({ ...filters, to: e.target.value })}
           style={{ ...iStyle, maxWidth: 160 }} title="To date" />
         {hasFilters && (
-          <button onClick={() => setFilters({ project_id: '', from: '', to: '' })}
+          <button onClick={() => { setFilters({ project_id: '', from: '', to: '', user_id: '' }); setShowAll(false) }}
             style={{ padding: '8px 12px', border: '1px solid #e2e8f0', background: '#fff', borderRadius: 6, fontSize: 13, color: '#64748b', cursor: 'pointer' }}>
             Clear filters
           </button>
@@ -163,7 +183,7 @@ export default function Timesheets({ initialProjectId }) {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
           <thead>
             <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-              {['Date', 'Project', 'Hours', 'Description', ''].map(h => (
+              {['Date', ...(isAdmin && showAll ? ['User'] : []), 'Project', 'Client', 'Hours', 'Description', ''].map(h => (
                 <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
               ))}
             </tr>
@@ -171,7 +191,7 @@ export default function Timesheets({ initialProjectId }) {
           <tbody>
             {entries.length === 0 ? (
               <tr>
-                <td colSpan={5} style={{ padding: '48px 16px', textAlign: 'center', color: '#94a3b8' }}>
+                <td colSpan={isAdmin && showAll ? 7 : 6} style={{ padding: '48px 16px', textAlign: 'center', color: '#94a3b8' }}>
                   {hasFilters ? 'No entries match the current filters' : 'No time entries yet — log your first entry'}
                 </td>
               </tr>
@@ -180,12 +200,24 @@ export default function Timesheets({ initialProjectId }) {
                 <td style={{ padding: '12px 16px', color: '#475569', whiteSpace: 'nowrap' }}>
                   {new Date(e.date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                 </td>
+                {isAdmin && showAll && (
+                  <td style={{ padding: '12px 16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                      <div style={{ width: 26, height: 26, borderRadius: '50%', background: '#2563eb', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        {(e.user_name || '?').charAt(0).toUpperCase()}
+                      </div>
+                      <span style={{ fontSize: 13, color: '#0f172a', fontWeight: 500 }}>{e.user_name || '—'}</span>
+                    </div>
+                  </td>
+                )}
                 <td style={{ padding: '12px 16px' }}>
                   <div style={{ fontWeight: 600, color: '#0f172a' }}>{e.project_name}</div>
                   <div style={{ fontSize: 12, color: '#94a3b8' }}>
                     <span style={{ fontFamily: 'monospace', background: '#eff6ff', color: '#2563eb', padding: '1px 5px', borderRadius: 3 }}>{e.project_code}</span>
-                    {e.client_name && <span style={{ marginLeft: 6 }}>{e.client_name}</span>}
                   </div>
+                </td>
+                <td style={{ padding: '12px 16px', color: '#475569' }}>
+                  {e.client_name || <span style={{ color: '#cbd5e1' }}>—</span>}
                 </td>
                 <td style={{ padding: '12px 16px', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap' }}>{e.hours}h</td>
                 <td style={{ padding: '12px 16px', color: '#64748b', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -201,7 +233,7 @@ export default function Timesheets({ initialProjectId }) {
           {entries.length > 0 && (
             <tfoot>
               <tr style={{ background: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
-                <td colSpan={2} style={{ padding: '10px 16px', fontSize: 13, fontWeight: 600, color: '#475569' }}>Total</td>
+                <td colSpan={isAdmin && showAll ? 4 : 3} style={{ padding: '10px 16px', fontSize: 13, fontWeight: 600, color: '#475569' }}>Total</td>
                 <td style={{ padding: '10px 16px', fontSize: 14, fontWeight: 700, color: '#0f172a' }}>{totalHours.toFixed(1)}h</td>
                 <td colSpan={2} />
               </tr>
