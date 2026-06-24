@@ -61,6 +61,19 @@ function BudgetProgress({ logged, budgeted, pct }) {
   )
 }
 
+function downloadCsv(filename, rows) {
+  const escape = v => {
+    const s = (v == null ? '' : String(v))
+    return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const csv = rows.map(r => r.map(escape).join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function Reports() {
   const [view,      setView]    = useState('project')
   const [byProject, setByProj]  = useState([])
@@ -77,6 +90,25 @@ export default function Reports() {
   const totalHours   = byProject.reduce((s, r) => s + r.total_hours, 0)
   const activeProj   = byProject.filter(r => r.total_hours > 0).length
   const activeUsers  = byUser.filter(u => u.total_hours > 0).length
+
+  function exportCsv() {
+    const suffix = [from, to].filter(Boolean).join('_to_') || 'all'
+    if (view === 'project') {
+      const header = ['Project Code', 'Project Name', 'Type', 'Client', 'Budgeted Hours', 'Hours Logged', 'Budget %', 'Report Initiated', 'Report Delivered', 'TAT (days)', 'Users Assigned']
+      const rows = byProject.map(r => [
+        r.project_code, r.project_name, r.type_name || '', r.client_name || '',
+        r.budgeted_hours ?? '', r.total_hours.toFixed(2), r.budget_pct ?? '',
+        r.report_initiated || '', r.report_delivered || '',
+        businessDays(r.report_initiated, r.report_delivered) ?? '',
+        (r.users_assigned || '').replace(/,/g, '; '),
+      ])
+      downloadCsv(`reports-by-project-${suffix}.csv`, [header, ...rows])
+    } else {
+      const header = ['User Name', 'Email', 'Total Hours', 'Entries', 'Projects']
+      const rows = byUser.map(u => [u.user_name, u.email, u.total_hours.toFixed(2), u.entry_count, u.project_count])
+      downloadCsv(`reports-by-user-${suffix}.csv`, [header, ...rows])
+    }
+  }
 
   return (
     <div>
@@ -113,6 +145,9 @@ export default function Reports() {
             <button onClick={() => { setFrom(''); setTo('') }} style={{ padding: '7px 12px', border: '1px solid #e2e8f0', background: '#fff', borderRadius: 6, fontSize: 12, color: '#64748b', cursor: 'pointer' }}>Clear</button>
           )}
         </div>
+        <button onClick={exportCsv} style={{ marginLeft: 'auto', padding: '8px 14px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+          ↓ Export CSV
+        </button>
       </div>
 
       {/* Table */}
