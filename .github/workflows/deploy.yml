@@ -49,4 +49,4 @@ jobs:
       - name: Install production dependencies & restart
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} \
-            "cd /var/www/time-tracking && npm install --omit=dev --silent && pm2 restart woven-time-tracking"
+            "cd /var/www/time-tracking && npm install --omit=dev --silent && (pm2 restart woven-time-tracking || pm2 start ecosystem.config.cjs) && pm2 save"
