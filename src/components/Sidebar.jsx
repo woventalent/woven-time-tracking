@@ -37,7 +37,7 @@ export default function Sidebar({ current, onNav }) {
     }}>
       {/* Header — workspace switcher */}
       <div style={{ padding: '18px 18px 14px', borderBottom: '1px solid #1e293b', position: 'relative' }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
           Workspace
         </div>
         <button onClick={openWsSwitcher} style={{
@@ -87,7 +87,7 @@ export default function Sidebar({ current, onNav }) {
                 width: '100%', display: 'flex', alignItems: 'center', gap: 10,
                 padding: '9px 18px', border: 'none',
                 background: active ? 'rgba(37,99,235,0.18)' : 'transparent',
-                color: active ? '#93c5fd' : '#64748b',
+                color: active ? '#93c5fd' : '#cbd5e1',
                 fontSize: 13.5, fontWeight: active ? 600 : 400,
                 textAlign: 'left',
                 borderLeft: `3px solid ${active ? '#3b82f6' : 'transparent'}`,
@@ -104,23 +104,25 @@ export default function Sidebar({ current, onNav }) {
       {/* Bottom section — Settings + User */}
       <div style={{ borderTop: '1px solid #1e293b', padding: '10px 0 0' }}>
 
-        {/* Settings — subtle, not a primary nav item */}
-        <button
-          onClick={() => onNav('settings')}
-          style={{
-            width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-            padding: '8px 18px', border: 'none',
-            background: current === 'settings' ? 'rgba(37,99,235,0.12)' : 'transparent',
-            color: current === 'settings' ? '#7dd3fc' : '#334155',
-            fontSize: 12.5, fontWeight: current === 'settings' ? 600 : 400,
-            textAlign: 'left', cursor: 'pointer',
-            borderLeft: `3px solid ${current === 'settings' ? '#3b82f6' : 'transparent'}`,
-            transition: 'all 0.12s',
-          }}
-        >
-          <GearIcon size={13} />
-          Settings
-        </button>
+        {/* Settings — admin only */}
+        {user?.role === 'admin' && (
+          <button
+            onClick={() => onNav('settings')}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+              padding: '8px 18px', border: 'none',
+              background: current === 'settings' ? 'rgba(37,99,235,0.12)' : 'transparent',
+              color: current === 'settings' ? '#7dd3fc' : '#94a3b8',
+              fontSize: 12.5, fontWeight: current === 'settings' ? 600 : 400,
+              textAlign: 'left', cursor: 'pointer',
+              borderLeft: `3px solid ${current === 'settings' ? '#3b82f6' : 'transparent'}`,
+              transition: 'all 0.12s',
+            }}
+          >
+            <GearIcon size={13} />
+            Settings
+          </button>
+        )}
 
         {/* User info */}
         <div style={{ position: 'relative' }}>
@@ -144,7 +146,7 @@ export default function Sidebar({ current, onNav }) {
               <div style={{ fontSize: 12.5, fontWeight: 600, color: '#cbd5e1', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {user?.name || 'Unknown'}
               </div>
-              <div style={{ fontSize: 11, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {user?.email || ''}
               </div>
             </div>

@@ -1,6 +1,7 @@
 import express from 'express'
 import cookieParser from 'cookie-parser'
 import multer from 'multer'
+import nodemailer from 'nodemailer'
 import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
@@ -10,6 +11,52 @@ import { randomUUID, randomBytes } from 'crypto'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const app = express()
 const PORT = process.env.PORT || 3000
+
+const APP_URL    = process.env.APP_URL || 'https://time.woventalent.in'
+
+// ── Email ─────────────────────────────────────────────────────────────────────
+const SMTP_CONFIGURED = !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS)
+const mailer = SMTP_CONFIGURED ? nodemailer.createTransport({
+  host:   process.env.SMTP_HOST,
+  port:   parseInt(process.env.SMTP_PORT || '587'),
+  secure: process.env.SMTP_PORT === '465',
+  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+}) : null
+
+async function sendAssignmentEmail({ toEmail, toName, project, requestorName, clientName }) {
+  if (!mailer) return
+  const dateAssigned = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  const projectUrl = `${APP_URL}`
+  const html = `
+    <p>Dear ${toName},</p>
+    <p>A new project has been assigned to you. Please find the project details below:</p>
+    <p><strong>Project Details:</strong></p>
+    <ul>
+      <li><strong>Project Name:</strong> ${project.name}</li>
+      <li><strong>Project Description:</strong> ${project.description || 'N/A'}</li>
+      <li><strong>Project Requester:</strong> ${requestorName || 'N/A'}</li>
+      <li><strong>Client:</strong> ${clientName || 'N/A'}</li>
+      <li><strong>Date Assigned:</strong> ${dateAssigned}</li>
+      <li><strong>Project Status:</strong> ${project.status === 'active' ? 'Active' : project.status}</li>
+    </ul>
+    <p>Please review the project details, initiate the project at the earliest, and schedule a briefing call with the requester.</p>
+    <p>You can access the project using the link below:<br>
+    <a href="${projectUrl}">Open Project</a></p>
+    <p>If you have any questions or require additional information, please get in touch with the project requester or your Team Lead.</p>
+    <br>
+    <p>Regards,<br>Time Tracking System<br><em>This is an automated email. Please do not reply to this message.</em></p>
+  `
+  try {
+    await mailer.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: toEmail,
+      subject: `New Project Assigned: ${project.name}`,
+      html,
+    })
+  } catch (err) {
+    console.error('Email send failed:', err.message)
+  }
+}
 
 const MS_AUTH    = !!(process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET)
 const TENANT     = process.env.AZURE_TENANT_ID || 'woventalent.in'
@@ -645,8 +692,8 @@ app.get('/api/projects', (req, res) => {
   res.json(db.prepare(sql).all(...params))
 })
 
-app.post('/api/projects', (req, res) => {
-  const { name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours, report_initiated, report_delivered, description } = req.body
+app.post('/api/projects', async (req, res) => {
+  const { name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours, report_initiated, report_delivered, description, assigned_user_id } = req.body
   if (!name?.trim()) return res.status(400).json({ error: 'Project name is required' })
   if (budgeted_hours !== undefined && budgeted_hours !== null && budgeted_hours !== '') {
     const bh = Number(budgeted_hours)
@@ -656,8 +703,24 @@ app.post('/api/projects', (req, res) => {
   const r = db.prepare(
     'INSERT INTO projects (workspace_id, project_code, name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours, report_initiated, report_delivered, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(req.workspaceId, code, name.trim(), project_type_id || null, request_date || null, requestor_contact_id || null, client_id || null, budgeted_hours || null, report_initiated || null, report_delivered || null, description || null)
-  db.prepare('INSERT OR IGNORE INTO project_members (project_id, user_id) VALUES (?, ?)').run(r.lastInsertRowid, req.userId)
-  res.json({ id: r.lastInsertRowid, project_code: code, name: name.trim() })
+  const projectId = r.lastInsertRowid
+  db.prepare('INSERT OR IGNORE INTO project_members (project_id, user_id) VALUES (?, ?)').run(projectId, req.userId)
+  if (assigned_user_id && Number(assigned_user_id) !== req.userId) {
+    db.prepare('INSERT OR IGNORE INTO project_members (project_id, user_id) VALUES (?, ?)').run(projectId, assigned_user_id)
+    const assignedUser  = db.prepare('SELECT name, email FROM users WHERE id = ?').get(assigned_user_id)
+    const client        = client_id ? db.prepare('SELECT name FROM clients WHERE id = ?').get(client_id) : null
+    const requestorRow  = requestor_contact_id ? db.prepare('SELECT name FROM contacts WHERE id = ?').get(requestor_contact_id) : null
+    if (assignedUser?.email) {
+      sendAssignmentEmail({
+        toEmail: assignedUser.email,
+        toName:  assignedUser.name,
+        project: { name: name.trim(), description: description || '', status: 'active' },
+        requestorName: requestorRow?.name || null,
+        clientName:    client?.name || null,
+      })
+    }
+  }
+  res.json({ id: projectId, project_code: code, name: name.trim() })
 })
 
 app.put('/api/projects/:id', (req, res) => {
@@ -865,9 +928,14 @@ app.get('/api/reports/by-client', (req, res) => {
 })
 
 app.get('/api/reports/summary', (req, res) => {
-  const totalRequested = db.prepare('SELECT COUNT(*) AS n FROM projects WHERE workspace_id = ?').get(req.workspaceId).n
-  const totalCompleted = db.prepare("SELECT COUNT(*) AS n FROM projects WHERE workspace_id = ? AND report_delivered IS NOT NULL").get(req.workspaceId).n
+  const year = new Date().getFullYear().toString()
   const yearMonth = new Date().toISOString().slice(0, 7)
+  const totalRequested = db.prepare(`
+    SELECT COUNT(*) AS n FROM projects WHERE workspace_id = ? AND strftime('%Y', request_date) = ?
+  `).get(req.workspaceId, year).n
+  const totalCompleted = db.prepare(`
+    SELECT COUNT(*) AS n FROM projects WHERE workspace_id = ? AND strftime('%Y', report_delivered) = ?
+  `).get(req.workspaceId, year).n
   const topClient = db.prepare(`
     SELECT c.name, COUNT(p.id) AS n
     FROM clients c JOIN projects p ON p.client_id = c.id AND p.workspace_id = ?
@@ -879,7 +947,7 @@ app.get('/api/reports/summary', (req, res) => {
     FROM timesheet_entries te
     JOIN projects p ON p.id = te.project_id AND p.workspace_id = ?
   `).get(req.workspaceId).n
-  res.json({ totalRequested, totalCompleted, topClient: topClient?.name || null, activeUsers })
+  res.json({ year: parseInt(year), totalRequested, totalCompleted, topClient: topClient?.name || null, activeUsers })
 })
 
 // ── Static + SPA ──────────────────────────────────────────────────────────────

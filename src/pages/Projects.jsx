@@ -50,6 +50,7 @@ export default function Projects({ onLogTime }) {
   const [projects,     setProjects] = useState([])
   const [clients,      setClients]  = useState([])
   const [projectTypes, setTypes]    = useState([])
+  const [wsUsers,      setWsUsers]  = useState([])
   const [search,        setSearch]    = useState('')
   const [showModal,     setShowModal] = useState(false)
   const [editing,       setEditing]   = useState(null)
@@ -59,6 +60,7 @@ export default function Projects({ onLogTime }) {
     api.get('/projects').then(setProjects),
     api.get('/clients').then(setClients),
     api.get('/project-types').then(r => setTypes(r.filter(x => x.active))),
+    api.get('/workspace-users').then(setWsUsers),
   ])
 
   useEffect(() => { loadAll() }, [])
@@ -109,11 +111,13 @@ export default function Projects({ onLogTime }) {
             {projects.reduce((s, p) => s + (p.total_hours || 0), 0).toFixed(1)}h total logged
           </p>
         </div>
-        <button onClick={openNew} style={{
-          background: '#2563eb', color: '#fff', border: 'none',
-          padding: '10px 18px', borderRadius: 8, fontSize: 14, fontWeight: 600,
-          boxShadow: '0 1px 4px rgba(37,99,235,0.3)', cursor: 'pointer',
-        }}>+ New Project</button>
+        {isAdmin && (
+          <button onClick={openNew} style={{
+            background: '#2563eb', color: '#fff', border: 'none',
+            padding: '10px 18px', borderRadius: 8, fontSize: 14, fontWeight: 600,
+            boxShadow: '0 1px 4px rgba(37,99,235,0.3)', cursor: 'pointer',
+          }}>+ New Project</button>
+        )}
       </div>
 
       <div style={{ marginBottom: 18 }}>
@@ -191,14 +195,14 @@ export default function Projects({ onLogTime }) {
                     <button onClick={e => { e.stopPropagation(); onLogTime && onLogTime(p.id) }} style={{ border: '1px solid #bfdbfe', background: '#eff6ff', padding: '4px 10px', borderRadius: 5, fontSize: 12, color: '#2563eb', cursor: 'pointer', marginRight: 6, fontWeight: 600 }}>
                       Log Time
                     </button>
-                    <button onClick={e => { e.stopPropagation(); openEdit(p) }} style={{ border: '1px solid #e2e8f0', background: '#fff', padding: '4px 10px', borderRadius: 5, fontSize: 12, color: '#475569', cursor: 'pointer', marginRight: 6 }}>
-                      Edit
-                    </button>
-                    {isAdmin && (
+                    {isAdmin && (<>
+                      <button onClick={e => { e.stopPropagation(); openEdit(p) }} style={{ border: '1px solid #e2e8f0', background: '#fff', padding: '4px 10px', borderRadius: 5, fontSize: 12, color: '#475569', cursor: 'pointer', marginRight: 6 }}>
+                        Edit
+                      </button>
                       <button onClick={e => handleDelete(p, e)} style={{ border: '1px solid #fecaca', background: '#fff', padding: '4px 10px', borderRadius: 5, fontSize: 12, color: '#ef4444', cursor: 'pointer' }}>
                         Delete
                       </button>
-                    )}
+                    </>)}
                   </td>
                 </tr>
               )
@@ -212,6 +216,7 @@ export default function Projects({ onLogTime }) {
           project={editing}
           clients={clients}
           projectTypes={projectTypes}
+          wsUsers={wsUsers}
           onSave={handleSave}
           onClose={() => setShowModal(false)}
         />
@@ -229,7 +234,7 @@ export default function Projects({ onLogTime }) {
 }
 
 // ── Project form modal ────────────────────────────────────────────────────────
-function ProjectModal({ project, clients, projectTypes, onSave, onClose }) {
+function ProjectModal({ project, clients, projectTypes, wsUsers, onSave, onClose }) {
   const [form, setForm] = useState({
     name:                 project?.name                 ?? '',
     project_type_id:      project?.project_type_id      ?? '',
@@ -241,6 +246,7 @@ function ProjectModal({ project, clients, projectTypes, onSave, onClose }) {
     report_initiated:     project?.report_initiated     ?? '',
     report_delivered:     project?.report_delivered     ?? '',
     description:          project?.description          ?? '',
+    assigned_user_id:     '',
   })
   const [contacts, setContacts] = useState([])
   const [error,    setError]    = useState('')
@@ -286,6 +292,17 @@ function ProjectModal({ project, clients, projectTypes, onSave, onClose }) {
             placeholder="Brief description of the project scope or objective…"
             rows={3} style={{ ...iStyle, resize: 'vertical' }} />
         </Field>
+        {!project && wsUsers.length > 0 && (
+          <Field label="Assign Team Member">
+            <select value={form.assigned_user_id} onChange={e => setForm({ ...form, assigned_user_id: e.target.value })} style={iStyle}>
+              <option value="">— select a user (optional) —</option>
+              {wsUsers.map(u => <option key={u.id} value={u.id}>{u.name} — {u.email}</option>)}
+            </select>
+            {form.assigned_user_id && (
+              <p style={{ fontSize: 12, color: '#2563eb', marginTop: 5 }}>An email notification will be sent to this user.</p>
+            )}
+          </Field>
+        )}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <Field label="Project Type">
             <select value={form.project_type_id} onChange={e => setForm({ ...form, project_type_id: e.target.value })} style={iStyle}>

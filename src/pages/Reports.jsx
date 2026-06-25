@@ -121,10 +121,10 @@ export default function Reports() {
 
       {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 28 }}>
-        <KpiCard value={summary?.totalRequested ?? '—'} label="Reports Requested"          color="#2563eb" />
-        <KpiCard value={summary?.totalCompleted ?? '—'} label="Reports Completed"           color="#16a34a" />
-        <KpiCard value={summary?.topClient      ?? '—'} label="Top Client This Month"       color="#f59e0b" />
-        <KpiCard value={summary?.activeUsers    ?? '—'} label="Total Active Users"          color="#9333ea" />
+        <KpiCard value={summary?.totalRequested ?? '—'} label={`Reports Requested ${summary?.year ?? ''}`} color="#2563eb" />
+        <KpiCard value={summary?.totalCompleted ?? '—'} label={`Reports Completed ${summary?.year ?? ''}`}  color="#16a34a" />
+        <KpiCard value={summary?.topClient      ?? '—'} label="Top Client This Month"                       color="#f59e0b" />
+        <KpiCard value={summary?.activeUsers    ?? '—'} label="Total Active Users"                          color="#9333ea" />
       </div>
 
       {/* Controls */}
