@@ -23,11 +23,31 @@ const mailer = SMTP_CONFIGURED ? nodemailer.createTransport({
   auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
 }) : null
 
-async function sendAssignmentEmail({ toEmail, toName, project, requestorName, clientName }) {
-  if (!mailer) return
+// Graph API token cache (app-level, expires ~1h)
+let _graphToken = null
+let _graphTokenExpiry = 0
+async function getGraphToken() {
+  if (_graphToken && Date.now() < _graphTokenExpiry - 60_000) return _graphToken
+  const res = await fetch(`https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID || 'woventalent.in'}/oauth2/v2.0/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type:    'client_credentials',
+      client_id:     process.env.AZURE_CLIENT_ID,
+      client_secret: process.env.AZURE_CLIENT_SECRET,
+      scope:         'https://graph.microsoft.com/.default',
+    }),
+  })
+  const data = await res.json()
+  if (data.error) throw new Error(data.error_description || data.error)
+  _graphToken = data.access_token
+  _graphTokenExpiry = Date.now() + data.expires_in * 1000
+  return _graphToken
+}
+
+function buildEmailHtml({ toName, project, requestorName, clientName }) {
   const dateAssigned = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-  const projectUrl = `${APP_URL}`
-  const html = `
+  return `
     <p>Dear ${toName},</p>
     <p>A new project has been assigned to you. Please find the project details below:</p>
     <p><strong>Project Details:</strong></p>
@@ -41,20 +61,49 @@ async function sendAssignmentEmail({ toEmail, toName, project, requestorName, cl
     </ul>
     <p>Please review the project details, initiate the project at the earliest, and schedule a briefing call with the requester.</p>
     <p>You can access the project using the link below:<br>
-    <a href="${projectUrl}">Open Project</a></p>
+    <a href="${APP_URL}">Open Project</a></p>
     <p>If you have any questions or require additional information, please get in touch with the project requester or your Team Lead.</p>
     <br>
-    <p>Regards,<br>Time Tracking System<br><em>This is an automated email. Please do not reply to this message.</em></p>
+    <p>Regards,<br>${project.senderName || 'Time Tracking System'}</p>
   `
+}
+
+async function sendAssignmentEmail({ fromEmail, fromName, toEmail, toName, project, requestorName, clientName }) {
+  const html = buildEmailHtml({ toName, project, requestorName, clientName })
+  const subject = `New Project Assigned: ${project.name}`
+
+  // Use Graph API (sends from the logged-in user's M365 mailbox) when SSO is enabled
+  if (MS_AUTH && fromEmail) {
+    try {
+      const token = await getGraphToken()
+      const graphRes = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(fromEmail)}/sendMail`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: {
+            subject,
+            body: { contentType: 'HTML', content: html },
+            toRecipients: [{ emailAddress: { address: toEmail, name: toName } }],
+          },
+          saveToSentItems: true,
+        }),
+      })
+      if (!graphRes.ok) {
+        const err = await graphRes.json().catch(() => ({}))
+        console.error('Graph sendMail failed:', err?.error?.message || graphRes.status)
+      }
+    } catch (err) {
+      console.error('Graph email error:', err.message)
+    }
+    return
+  }
+
+  // Fallback: SMTP (for dev / non-SSO environments)
+  if (!mailer) return
   try {
-    await mailer.sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: toEmail,
-      subject: `New Project Assigned: ${project.name}`,
-      html,
-    })
+    await mailer.sendMail({ from: process.env.SMTP_FROM || process.env.SMTP_USER, to: toEmail, subject, html })
   } catch (err) {
-    console.error('Email send failed:', err.message)
+    console.error('SMTP email failed:', err.message)
   }
 }
 
@@ -440,6 +489,8 @@ app.use('/api', (req, res, next) => {
   if (!s) return res.status(401).json({ error: 'Not authenticated' })
   if (!s.workspace_id) return res.status(403).json({ error: 'No workspace selected' })
   req.userId      = Number(s.user_id)
+  req.userEmail   = s.user_email ?? null
+  req.userName    = s.user_name ?? null
   req.workspaceId = Number(s.workspace_id)
   req.globalRole  = s.user_global_role ?? null
   const wm = db.prepare('SELECT role FROM workspace_members WHERE user_id = ? AND workspace_id = ?').get(req.userId, req.workspaceId)
@@ -712,9 +763,11 @@ app.post('/api/projects', async (req, res) => {
     const requestorRow  = requestor_contact_id ? db.prepare('SELECT name FROM contacts WHERE id = ?').get(requestor_contact_id) : null
     if (assignedUser?.email) {
       sendAssignmentEmail({
-        toEmail: assignedUser.email,
-        toName:  assignedUser.name,
-        project: { name: name.trim(), description: description || '', status: 'active' },
+        fromEmail:     req.userEmail,
+        fromName:      req.userName,
+        toEmail:       assignedUser.email,
+        toName:        assignedUser.name,
+        project:       { name: name.trim(), description: description || '', status: 'active', senderName: req.userName },
         requestorName: requestorRow?.name || null,
         clientName:    client?.name || null,
       })
