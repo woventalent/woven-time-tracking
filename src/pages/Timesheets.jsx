@@ -138,7 +138,7 @@ export default function Timesheets({ initialProjectId }) {
     <div>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28 }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#0f172a' }}>Timesheets</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#00259C' }}>Timesheets</h1>
           <p style={{ color: '#64748b', fontSize: 14, marginTop: 4 }}>
             {entries.length} entr{entries.length !== 1 ? 'ies' : 'y'} &nbsp;·&nbsp; {totalHours.toFixed(1)}h total
           </p>

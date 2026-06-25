@@ -46,7 +46,7 @@ function MainApp() {
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       <Sidebar current={page} onNav={handleNav} />
-      <main style={{ flex: 1, overflow: 'auto', padding: '36px 40px', background: '#f8fafc' }}>
+      <main style={{ flex: 1, overflow: 'auto', padding: '36px 40px', background: '#F8F7EF' }}>
         {pages[page]}
       </main>
     </div>

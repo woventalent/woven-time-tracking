@@ -575,7 +575,7 @@ export default function Admin() {
   return (
     <div>
       <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: '#0f172a' }}>Settings</h1>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: '#00259C' }}>Settings</h1>
         <p style={{ color: '#64748b', fontSize: 14, marginTop: 4 }}>Manage master data for this workspace</p>
       </div>
 

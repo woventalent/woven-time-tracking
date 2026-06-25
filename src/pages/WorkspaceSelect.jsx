@@ -19,13 +19,13 @@ export default function WorkspaceSelect() {
   return (
     <div style={{
       minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #0f172a 100%)',
+      background: '#F8F7EF',
     }}>
       <div style={{
         background: '#fff', borderRadius: 16, padding: '44px 48px',
-        width: 440, boxShadow: '0 32px 80px rgba(0,0,0,0.35)',
+        width: 440, boxShadow: '0 32px 80px rgba(0,0,0,0.15)',
       }}>
-        <div style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', marginBottom: 4 }}>Woven</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: '#00259C', marginBottom: 4 }}>Woven</div>
         <p style={{ color: '#64748b', fontSize: 14, marginBottom: 28 }}>
           Hi {user?.name?.split(' ')[0]} — select a workspace to continue.
         </p>

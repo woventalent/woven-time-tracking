@@ -103,7 +103,7 @@ export default function Projects({ onLogTime }) {
     <div>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28 }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#0f172a' }}>Projects</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#00259C' }}>Projects</h1>
           <p style={{ color: '#64748b', fontSize: 14, marginTop: 4 }}>
             {projects.length} project{projects.length !== 1 ? 's' : ''} &nbsp;·&nbsp;
             {projects.reduce((s, p) => s + (p.total_hours || 0), 0).toFixed(1)}h total logged
@@ -451,7 +451,7 @@ function ProjectDetail({ project, onClose, onProjectUpdate }) {
                   {project.status.replace('_', ' ')}
                 </span>
               </div>
-              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#0f172a' }}>{project.name}</h2>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#00259C' }}>{project.name}</h2>
               {project.client_name && <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>{project.client_name}</div>}
               {project.description && <div style={{ fontSize: 13, color: '#475569', marginTop: 8, lineHeight: 1.5, fontStyle: 'italic' }}>{project.description}</div>}
             </div>

@@ -44,19 +44,19 @@ export default function Login({ errorMsg }) {
   return (
     <div style={{
       minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #0f172a 100%)',
+      background: '#F8F7EF',
     }}>
       <div style={{
         background: '#fff', borderRadius: 16, padding: '44px 48px',
-        width: 400, boxShadow: '0 32px 80px rgba(0,0,0,0.35)',
+        width: 400, boxShadow: '0 32px 80px rgba(0,0,0,0.15)',
       }}>
         {/* Logo */}
         <div style={{ marginBottom: 32 }}>
-          <div style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.5px' }}>Woven</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#00259C', letterSpacing: '-0.5px' }}>Woven</div>
           <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>Time Tracking</div>
         </div>
 
-        <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0f172a', marginBottom: 6 }}>Sign in</h2>
+        <h2 style={{ fontSize: 20, fontWeight: 700, color: '#00259C', marginBottom: 6 }}>Sign in</h2>
         <p style={{ fontSize: 14, color: '#64748b', marginBottom: 28 }}>
           {msAuth ? 'Use your Woven Microsoft account to continue.' : 'Development mode — enter any name and email.'}
         </p>
