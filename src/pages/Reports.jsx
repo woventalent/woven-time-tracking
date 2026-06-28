@@ -96,10 +96,10 @@ export default function Reports() {
   function exportCsv() {
     const suffix = [from, to].filter(Boolean).join('_to_') || 'all'
     if (view === 'project') {
-      const header = ['Project Code', 'Project Name', 'Type', 'Client', 'Budgeted Hours', 'Hours Logged', 'Budget %', 'Report Initiated', 'Report Delivered', 'TAT (days)', 'Users Assigned']
+      const header = ['Project Code', 'Project Name', 'Type', 'Client', 'Hours Logged', 'Credits', 'Report Initiated', 'Report Delivered', 'TAT (days)', 'Users Assigned']
       const rows = byProject.map(r => [
         r.project_code, r.project_name, r.type_name || '', r.client_name || '',
-        r.budgeted_hours ?? '', r.total_hours.toFixed(2), r.budget_pct ?? '',
+        r.total_hours.toFixed(2), (r.total_hours / 9).toFixed(2),
         r.report_initiated || '', r.report_delivered || '',
         businessDays(r.report_initiated, r.report_delivered) ?? '',
         (r.users_assigned || '').replace(/,/g, '; '),
@@ -159,7 +159,7 @@ export default function Reports() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                {['Project', 'Type', 'Client', 'Hours Logged', 'Budget', 'Users Assigned', 'TAT (days)'].map(h => (
+                {['Project', 'Type', 'Client', 'Hours Logged', 'Credits', 'Users Assigned', 'TAT (days)'].map(h => (
                   <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -184,7 +184,8 @@ export default function Reports() {
                     <td style={{ padding: '13px 16px', color: '#475569' }}>{r.client_name || <span style={{ color: '#cbd5e1' }}>—</span>}</td>
                     <td style={{ padding: '13px 16px', fontWeight: 700, color: '#0f172a' }}>{r.total_hours.toFixed(1)}h</td>
                     <td style={{ padding: '13px 16px' }}>
-                      <BudgetProgress logged={r.total_hours} budgeted={r.budgeted_hours} pct={r.budget_pct} />
+                      <span style={{ fontWeight: 700, color: '#2563eb' }}>{(r.total_hours / 9).toFixed(2)}</span>
+                      <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 4 }}>credits</span>
                     </td>
                     <td style={{ padding: '13px 16px', maxWidth: 180 }}>
                       {userNames.length > 0

@@ -34,14 +34,14 @@ function ProjectTypesTab() {
   const [data,      setData]      = useState([])
   const [showModal, setShowModal] = useState(false)
   const [editing,   setEditing]   = useState(null)
-  const [form,      setForm]      = useState({ name: '', color: '#2563eb' })
+  const [form,      setForm]      = useState({ name: '', description: '' })
   const [error,     setError]     = useState('')
 
   useEffect(() => { load() }, [])
   function load() { api.get('/project-types').then(setData) }
 
-  function openAdd()   { setEditing(null); setForm({ name: '', color: '#2563eb' }); setError(''); setShowModal(true) }
-  function openEdit(t) { setEditing(t); setForm({ name: t.name, color: t.color || '#2563eb' }); setError(''); setShowModal(true) }
+  function openAdd()   { setEditing(null); setForm({ name: '', description: '' }); setError(''); setShowModal(true) }
+  function openEdit(t) { setEditing(t); setForm({ name: t.name, description: t.description || '' }); setError(''); setShowModal(true) }
 
   async function submit(e) {
     e.preventDefault()
@@ -60,7 +60,7 @@ function ProjectTypesTab() {
   }
 
   async function toggle(t) {
-    await api.put('/project-types/' + t.id, { name: t.name, color: t.color, active: t.active ? 0 : 1 })
+    await api.put('/project-types/' + t.id, { name: t.name, description: t.description, active: t.active ? 0 : 1 })
     load()
   }
 
@@ -70,29 +70,24 @@ function ProjectTypesTab() {
     load()
   }
 
-  const PRESET_COLORS = ['#2563eb','#16a34a','#d97706','#dc2626','#9333ea','#0891b2','#db2777','#65a30d','#475569','#f97316']
-
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <p style={{ color: '#64748b', fontSize: 14 }}>Configurable tags to categorise projects.</p>
         <button onClick={openAdd} style={{ background: '#2563eb', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ Add Type</button>
       </div>
-      <TableShell cols={['Type', 'Color', 'Status', 'Actions']}>
+      <TableShell cols={['Type', 'Description', 'Status', 'Actions']}>
         {data.length === 0 ? (
           <tr><td colSpan={4} style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>No project types yet</td></tr>
         ) : data.map((t, i) => (
           <tr key={t.id} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
             <td style={{ padding: '13px 16px' }}>
-              <span style={{ background: (t.color || '#64748b') + '22', color: t.color || '#64748b', fontSize: 13, fontWeight: 600, padding: '4px 12px', borderRadius: 20, border: `1px solid ${(t.color || '#64748b')}44` }}>
+              <span style={{ background: '#eff6ff', color: '#2563eb', fontSize: 13, fontWeight: 600, padding: '4px 12px', borderRadius: 20, border: '1px solid #bfdbfe' }}>
                 {t.name}
               </span>
             </td>
-            <td style={{ padding: '13px 16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ width: 18, height: 18, borderRadius: 4, background: t.color || '#64748b', border: '1px solid rgba(0,0,0,0.1)' }} />
-                <span style={{ fontSize: 12, color: '#64748b', fontFamily: 'monospace' }}>{t.color}</span>
-              </div>
+            <td style={{ padding: '13px 16px', color: '#475569', fontSize: 13, maxWidth: 400 }}>
+              {t.description || <span style={{ color: '#cbd5e1' }}>—</span>}
             </td>
             <td style={{ padding: '13px 16px' }}><StatusBadge active={t.active} /></td>
             <td style={{ padding: '13px 16px' }}>
@@ -106,27 +101,15 @@ function ProjectTypesTab() {
         ))}
       </TableShell>
       {showModal && (
-        <Modal title={editing ? 'Edit Project Type' : 'Add Project Type'} onClose={() => setShowModal(false)} width={400}>
+        <Modal title={editing ? 'Edit Project Type' : 'Add Project Type'} onClose={() => setShowModal(false)} width={480}>
           <form onSubmit={submit}>
             <Field label="Type Name" required>
-              <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={iStyle} required autoFocus placeholder="e.g. Qualitative, Quantitative" />
+              <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={iStyle} required autoFocus placeholder="e.g. GCC Report, Industry Report" />
             </Field>
-            <Field label="Color">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {PRESET_COLORS.map(c => (
-                    <button type="button" key={c} onClick={() => setForm({ ...form, color: c })}
-                      style={{ width: 26, height: 26, borderRadius: 6, background: c, border: form.color === c ? '2px solid #0f172a' : '2px solid transparent', cursor: 'pointer', padding: 0 }} />
-                  ))}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <input type="color" value={form.color} onChange={e => setForm({ ...form, color: e.target.value })}
-                    style={{ width: 36, height: 36, borderRadius: 6, border: '1px solid #e2e8f0', cursor: 'pointer', padding: 2 }} />
-                  <span style={{ fontSize: 13, fontWeight: 600, padding: '5px 14px', borderRadius: 20, background: form.color + '22', color: form.color, border: `1px solid ${form.color}44` }}>
-                    {form.name || 'Preview'}
-                  </span>
-                </div>
-              </div>
+            <Field label="Description">
+              <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
+                rows={4} style={{ ...iStyle, resize: 'vertical' }}
+                placeholder="Describe what this report type covers…" />
             </Field>
             <ErrMsg msg={error} />
             <ModalBtns onClose={() => setShowModal(false)} label={editing ? 'Save' : 'Add Type'} />
