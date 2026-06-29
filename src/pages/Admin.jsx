@@ -222,6 +222,7 @@ function ClientsTab() {
   const [editingContact,   setEditingContact]   = useState(null)
   const [clientForm,       setClientForm]       = useState({ name: '' })
   const [contactForm,      setContactForm]      = useState({ name: '', email: '', phone: '', role: '' })
+  const [contactErrors,    setContactErrors]    = useState({})
   const [error,            setError]            = useState('')
 
   useEffect(() => { loadClients() }, [])
@@ -240,18 +241,31 @@ function ClientsTab() {
     e.preventDefault()
     setError('')
     try {
-      await api.post('/clients', clientForm)
+      const newClient = await api.post('/clients', clientForm)
       setShowClientModal(false)
       setClientForm({ name: '' })
       loadClients()
+      setExpanded(newClient.id)
+      loadContacts(newClient.id)
     } catch (err) {
       setError(err.message)
     }
   }
 
+  function validateContactForm(form) {
+    const errs = {}
+    if (/\d/.test(form.name)) errs.name = 'Name should not contain numbers'
+    if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errs.email = 'Enter a valid email address'
+    if (form.phone && !/^[0-9+()\-\s.]+$/.test(form.phone)) errs.phone = 'Phone number should contain only digits, +, -, spaces, or ( )'
+    if (form.role && /\d/.test(form.role)) errs.role = 'Role / Title should not contain numbers'
+    return errs
+  }
+
   async function saveContact(e) {
     e.preventDefault()
     setError('')
+    const errs = validateContactForm(contactForm)
+    if (Object.keys(errs).length) { setContactErrors(errs); return }
     const cid = showContactModal
     try {
       if (editingContact) {
@@ -262,6 +276,7 @@ function ClientsTab() {
       setShowContactModal(null)
       setEditingContact(null)
       setContactForm({ name: '', email: '', phone: '', role: '' })
+      setContactErrors({})
       loadContacts(cid)
     } catch (err) {
       setError(err.message)
@@ -284,6 +299,7 @@ function ClientsTab() {
   function openAddContact(cid) {
     setEditingContact(null)
     setContactForm({ name: '', email: '', phone: '', role: '' })
+    setContactErrors({})
     setError('')
     setShowContactModal(cid)
   }
@@ -291,6 +307,7 @@ function ClientsTab() {
   function openEditContact(ct, cid) {
     setEditingContact(ct)
     setContactForm({ name: ct.name, email: ct.email || '', phone: ct.phone || '', role: ct.role || '' })
+    setContactErrors({})
     setError('')
     setShowContactModal(cid)
   }
@@ -383,16 +400,36 @@ function ClientsTab() {
         <Modal title={editingContact ? 'Edit Contact' : 'Add Contact'} onClose={() => { setShowContactModal(null); setEditingContact(null) }} width={420}>
           <form onSubmit={saveContact}>
             <Field label="Full Name" required>
-              <input value={contactForm.name} onChange={e => setContactForm({ ...contactForm, name: e.target.value })} style={iStyle} required autoFocus placeholder="e.g. Priya Sharma" />
+              <input value={contactForm.name}
+                onChange={e => { setContactForm({ ...contactForm, name: e.target.value }); setContactErrors(err => ({ ...err, name: '' })) }}
+                style={{ ...iStyle, borderColor: contactErrors.name ? '#ef4444' : undefined }}
+                required autoFocus placeholder="e.g. Priya Sharma" />
+              {contactErrors.name && <p style={{ fontSize: 12, color: '#ef4444', marginTop: 4 }}>{contactErrors.name}</p>}
             </Field>
             <Field label="Email Address" required>
-              <input type="email" value={contactForm.email} onChange={e => setContactForm({ ...contactForm, email: e.target.value })} style={iStyle} required placeholder="e.g. priya@company.com" />
+              <input type="email" value={contactForm.email}
+                onChange={e => { setContactForm({ ...contactForm, email: e.target.value }); setContactErrors(err => ({ ...err, email: '' })) }}
+                style={{ ...iStyle, borderColor: contactErrors.email ? '#ef4444' : undefined }}
+                required placeholder="e.g. priya@company.com" />
+              {contactErrors.email && <p style={{ fontSize: 12, color: '#ef4444', marginTop: 4 }}>{contactErrors.email}</p>}
             </Field>
             <Field label="Phone" required>
-              <input type="tel" value={contactForm.phone} onChange={e => setContactForm({ ...contactForm, phone: e.target.value })} style={iStyle} required placeholder="e.g. +91 98765 43210" />
+              <input type="tel" value={contactForm.phone}
+                onChange={e => {
+                  const v = e.target.value.replace(/[a-zA-Z]/g, '')
+                  setContactForm({ ...contactForm, phone: v })
+                  setContactErrors(err => ({ ...err, phone: '' }))
+                }}
+                style={{ ...iStyle, borderColor: contactErrors.phone ? '#ef4444' : undefined }}
+                required placeholder="e.g. +91 98765 43210" />
+              {contactErrors.phone && <p style={{ fontSize: 12, color: '#ef4444', marginTop: 4 }}>{contactErrors.phone}</p>}
             </Field>
             <Field label="Role / Title">
-              <input value={contactForm.role} onChange={e => setContactForm({ ...contactForm, role: e.target.value })} style={iStyle} placeholder="e.g. Marketing Director" />
+              <input value={contactForm.role}
+                onChange={e => { setContactForm({ ...contactForm, role: e.target.value }); setContactErrors(err => ({ ...err, role: '' })) }}
+                style={{ ...iStyle, borderColor: contactErrors.role ? '#ef4444' : undefined }}
+                placeholder="e.g. Marketing Director" />
+              {contactErrors.role && <p style={{ fontSize: 12, color: '#ef4444', marginTop: 4 }}>{contactErrors.role}</p>}
             </Field>
             <ErrMsg msg={error} />
             <ModalBtns onClose={() => { setShowContactModal(null); setEditingContact(null) }} label={editingContact ? 'Save' : 'Add Contact'} />
