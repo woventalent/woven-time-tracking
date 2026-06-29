@@ -34,14 +34,14 @@ function ProjectTypesTab() {
   const [data,      setData]      = useState([])
   const [showModal, setShowModal] = useState(false)
   const [editing,   setEditing]   = useState(null)
-  const [form,      setForm]      = useState({ name: '', color: '#2563eb' })
+  const [form,      setForm]      = useState({ name: '', color: '#2563eb', description: '' })
   const [error,     setError]     = useState('')
 
   useEffect(() => { load() }, [])
   function load() { api.get('/project-types').then(setData) }
 
-  function openAdd()   { setEditing(null); setForm({ name: '', color: '#2563eb' }); setError(''); setShowModal(true) }
-  function openEdit(t) { setEditing(t); setForm({ name: t.name, color: t.color || '#2563eb' }); setError(''); setShowModal(true) }
+  function openAdd()   { setEditing(null); setForm({ name: '', color: '#2563eb', description: '' }); setError(''); setShowModal(true) }
+  function openEdit(t) { setEditing(t); setForm({ name: t.name, color: t.color || '#2563eb', description: t.description || '' }); setError(''); setShowModal(true) }
 
   async function submit(e) {
     e.preventDefault()
@@ -60,7 +60,7 @@ function ProjectTypesTab() {
   }
 
   async function toggle(t) {
-    await api.put('/project-types/' + t.id, { name: t.name, color: t.color, active: t.active ? 0 : 1 })
+    await api.put('/project-types/' + t.id, { name: t.name, color: t.color, description: t.description || '', active: t.active ? 0 : 1 })
     load()
   }
 
@@ -78,7 +78,7 @@ function ProjectTypesTab() {
         <p style={{ color: '#64748b', fontSize: 14 }}>Configurable tags to categorise projects.</p>
         <button onClick={openAdd} style={{ background: '#2563eb', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ Add Type</button>
       </div>
-      <TableShell cols={['Type', 'Color', 'Status', 'Actions']}>
+      <TableShell cols={['Type', 'Description', 'Status', 'Actions']}>
         {data.length === 0 ? (
           <tr><td colSpan={4} style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>No project types yet</td></tr>
         ) : data.map((t, i) => (
@@ -88,11 +88,8 @@ function ProjectTypesTab() {
                 {t.name}
               </span>
             </td>
-            <td style={{ padding: '13px 16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ width: 18, height: 18, borderRadius: 4, background: t.color || '#64748b', border: '1px solid rgba(0,0,0,0.1)' }} />
-                <span style={{ fontSize: 12, color: '#64748b', fontFamily: 'monospace' }}>{t.color}</span>
-              </div>
+            <td style={{ padding: '13px 16px', color: '#475569', fontSize: 13, maxWidth: 360 }}>
+              {t.description || <span style={{ color: '#cbd5e1' }}>—</span>}
             </td>
             <td style={{ padding: '13px 16px' }}><StatusBadge active={t.active} /></td>
             <td style={{ padding: '13px 16px' }}>
@@ -111,22 +108,10 @@ function ProjectTypesTab() {
             <Field label="Type Name" required>
               <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={iStyle} required autoFocus placeholder="e.g. Qualitative, Quantitative" />
             </Field>
-            <Field label="Color">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {PRESET_COLORS.map(c => (
-                    <button type="button" key={c} onClick={() => setForm({ ...form, color: c })}
-                      style={{ width: 26, height: 26, borderRadius: 6, background: c, border: form.color === c ? '2px solid #0f172a' : '2px solid transparent', cursor: 'pointer', padding: 0 }} />
-                  ))}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <input type="color" value={form.color} onChange={e => setForm({ ...form, color: e.target.value })}
-                    style={{ width: 36, height: 36, borderRadius: 6, border: '1px solid #e2e8f0', cursor: 'pointer', padding: 2 }} />
-                  <span style={{ fontSize: 13, fontWeight: 600, padding: '5px 14px', borderRadius: 20, background: form.color + '22', color: form.color, border: `1px solid ${form.color}44` }}>
-                    {form.name || 'Preview'}
-                  </span>
-                </div>
-              </div>
+            <Field label="Description">
+              <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
+                placeholder="Brief description of this project type…"
+                rows={3} style={{ ...iStyle, resize: 'vertical' }} />
             </Field>
             <ErrMsg msg={error} />
             <ModalBtns onClose={() => setShowModal(false)} label={editing ? 'Save' : 'Add Type'} />
@@ -291,6 +276,13 @@ function ClientsTab() {
     loadContacts(cid)
   }
 
+  async function delClient(clientId, clientName) {
+    if (!confirm(`Delete client "${clientName}" and all their contacts? This cannot be undone.`)) return
+    await api.delete('/clients/' + clientId)
+    loadClients()
+    if (expanded === clientId) setExpanded(null)
+  }
+
   function openAddContact(cid) {
     setEditingContact(null)
     setContactForm({ name: '', email: '', phone: '', role: '' })
@@ -329,8 +321,12 @@ function ClientsTab() {
                   {client.project_count} project{client.project_count !== 1 ? 's' : ''}
                 </span>
                 <button onClick={e => { e.stopPropagation(); openAddContact(client.id) }}
-                  style={{ border: '1px solid #e2e8f0', background: '#fff', padding: '5px 12px', borderRadius: 5, fontSize: 12, color: '#475569', cursor: 'pointer' }}>
+                  style={{ border: '1px solid #e2e8f0', background: '#fff', padding: '5px 12px', borderRadius: 5, fontSize: 12, color: '#475569', cursor: 'pointer', marginRight: 6 }}>
                   + Contact
+                </button>
+                <button onClick={e => { e.stopPropagation(); delClient(client.id, client.name) }}
+                  style={{ border: '1px solid #fecaca', background: '#fff', padding: '5px 12px', borderRadius: 5, fontSize: 12, color: '#ef4444', cursor: 'pointer' }}>
+                  Delete
                 </button>
               </div>
               {expanded === client.id && (

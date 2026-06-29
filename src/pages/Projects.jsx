@@ -26,20 +26,13 @@ const STATUS_COLORS = {
   cancelled: { bg: '#fee2e2', fg: '#b91c1c' },
 }
 
-function BudgetBar({ logged, budgeted, pct }) {
-  if (!budgeted) return <span style={{ fontSize: 13, color: '#94a3b8' }}>{logged ? `${(+logged).toFixed(1)}h` : '—'}</span>
-  const safe  = Math.min(pct ?? 0, 100)
-  const color = (pct ?? 0) >= 100 ? '#dc2626' : (pct ?? 0) >= 80 ? '#d97706' : '#16a34a'
+function CreditsDisplay({ hours }) {
+  const credits = (+(hours || 0) / 9)
+  if (!hours || +hours === 0) return <span style={{ fontSize: 13, color: '#94a3b8' }}>—</span>
   return (
-    <div style={{ minWidth: 120 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#64748b', marginBottom: 3 }}>
-        <span>{(+logged || 0).toFixed(1)}h / {budgeted}h</span>
-        <span style={{ color, fontWeight: 700 }}>{pct ?? 0}%</span>
-      </div>
-      <div style={{ height: 5, background: '#e2e8f0', borderRadius: 99, overflow: 'hidden' }}>
-        <div style={{ width: `${safe}%`, height: '100%', background: color, borderRadius: 99, transition: 'width 0.3s' }} />
-      </div>
-    </div>
+    <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
+      {credits.toFixed(2)} <span style={{ fontSize: 11, color: '#64748b', fontWeight: 400 }}>credits</span>
+    </span>
   )
 }
 
@@ -132,7 +125,7 @@ export default function Projects({ onLogTime }) {
         <table style={{ width: '100%', minWidth: 1000, borderCollapse: 'collapse', fontSize: 13.5 }}>
           <thead>
             <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-              {['Code', 'Project Name', 'Type', 'Request Date', 'Client', 'Requestor', 'Budget / Hours', 'Status', 'Report Initiated', 'Report Delivered', ''].map(h => (
+              {['Code', 'Project Name', 'Type', 'Request Date', 'Client', 'Requestor', 'Credits', 'Status', 'Report Initiated', 'Report Delivered', ''].map(h => (
                 <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
@@ -178,7 +171,7 @@ export default function Projects({ onLogTime }) {
                     ) : <span style={{ color: '#cbd5e1' }}>—</span>}
                   </td>
                   <td style={{ padding: '13px 16px' }}>
-                    <BudgetBar logged={p.total_hours} budgeted={p.budgeted_hours} pct={p.budget_pct} />
+                    <CreditsDisplay hours={p.total_hours} />
                   </td>
                   <td style={{ padding: '13px 16px' }}>
                     <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: sc.bg, color: sc.fg }}>
@@ -353,15 +346,9 @@ function ProjectModal({ project, clients, projectTypes, wsUsers, onSave, onClose
             </p>
           )}
         </Field>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="Request Date">
-            <input type="date" value={form.request_date} onChange={e => setForm({ ...form, request_date: e.target.value })} style={iStyle} />
-          </Field>
-          <Field label="Budgeted Hours">
-            <input type="number" min="0" step="0.5" value={form.budgeted_hours} onChange={e => setForm({ ...form, budgeted_hours: e.target.value })}
-              placeholder="e.g. 120" style={iStyle} />
-          </Field>
-        </div>
+        <Field label="Request Date">
+          <input type="date" value={form.request_date} onChange={e => setForm({ ...form, request_date: e.target.value })} style={iStyle} />
+        </Field>
         {error && <div style={{ color: '#ef4444', fontSize: 13, marginBottom: 12, padding: '8px 12px', background: '#fef2f2', borderRadius: 6 }}>{error}</div>}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
           <button type="button" onClick={onClose} style={{ padding: '9px 16px', border: '1px solid #e2e8f0', background: '#fff', borderRadius: 7, fontSize: 13.5, cursor: 'pointer' }}>Cancel</button>
@@ -477,16 +464,10 @@ function ProjectDetail({ project, onClose, onProjectUpdate }) {
 
           <div style={{ display: 'flex', gap: 24, marginTop: 16 }}>
             <StatPill label="Logged"  value={`${(+project.total_hours || 0).toFixed(1)}h`} />
-            {project.budgeted_hours && <StatPill label="Budget" value={`${project.budgeted_hours}h`} />}
+            <StatPill label="Credits" value={`${((+project.total_hours || 0) / 9).toFixed(2)}`} />
             <StatPill label="Entries" value={project.entry_count ?? 0} />
             <StatPill label="Members" value={project.member_count ?? 0} />
           </div>
-
-          {project.budgeted_hours && (
-            <div style={{ marginTop: 12 }}>
-              <BudgetBar logged={project.total_hours} budgeted={project.budgeted_hours} pct={project.budget_pct} />
-            </div>
-          )}
         </div>
 
         {/* Tabs */}

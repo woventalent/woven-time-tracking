@@ -286,7 +286,7 @@ export default function Timesheets({ initialProjectId }) {
               </Field>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <Field label="Date" required>
-                  <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={iStyle} required min={minDate} />
+                  <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={iStyle} required min={minDate} max={today()} />
                 </Field>
                 <Field label="Hours" required>
                   <input

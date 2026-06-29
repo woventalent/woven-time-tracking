@@ -289,6 +289,7 @@ ensureColumn('projects',           'report_delivered',     'DATE')
 ensureColumn('users',              'global_role',          "TEXT DEFAULT NULL")
 ensureColumn('workspaces',         'code_prefix',          "TEXT DEFAULT 'WRI'")
 ensureColumn('projects',           'description',          'TEXT')
+ensureColumn('project_types',      'description',          'TEXT')
 
 // ── Seed defaults ─────────────────────────────────────────────────────────────
 db.exec(`INSERT OR IGNORE INTO workspaces (id, name, slug)
@@ -505,18 +506,18 @@ app.get('/api/project-types', (req, res) => {
 })
 
 app.post('/api/project-types', (req, res) => {
-  const { name, color } = req.body
+  const { name, color, description } = req.body
   if (!name?.trim()) return res.status(400).json({ error: 'Name is required' })
   try {
-    const r = db.prepare('INSERT INTO project_types (workspace_id, name, color) VALUES (?, ?, ?)').run(req.workspaceId, name.trim(), color || '#64748b')
-    res.json({ id: r.lastInsertRowid, name: name.trim(), color: color || '#64748b', active: 1 })
+    const r = db.prepare('INSERT INTO project_types (workspace_id, name, color, description) VALUES (?, ?, ?, ?)').run(req.workspaceId, name.trim(), color || '#64748b', description || null)
+    res.json({ id: r.lastInsertRowid, name: name.trim(), color: color || '#64748b', description: description || null, active: 1 })
   } catch { res.status(400).json({ error: 'Type name already exists' }) }
 })
 
 app.put('/api/project-types/:id', (req, res) => {
-  const { name, color, active } = req.body
-  db.prepare('UPDATE project_types SET name = ?, color = ?, active = ? WHERE id = ? AND workspace_id = ?')
-    .run(name, color || '#64748b', active ?? 1, req.params.id, req.workspaceId)
+  const { name, color, active, description } = req.body
+  db.prepare('UPDATE project_types SET name = ?, color = ?, active = ?, description = ? WHERE id = ? AND workspace_id = ?')
+    .run(name, color || '#64748b', active ?? 1, description || null, req.params.id, req.workspaceId)
   res.json({ success: true })
 })
 
@@ -895,6 +896,8 @@ app.get('/api/timesheets', (req, res) => {
 app.post('/api/timesheets', (req, res) => {
   const { project_id, date, hours, description } = req.body
   if (!project_id || !date || !hours) return res.status(400).json({ error: 'Project, date, and hours are required' })
+  const today = new Date().toISOString().split('T')[0]
+  if (date > today) return res.status(400).json({ error: 'Date cannot be in the future' })
   const parsedHours = parseFloat(hours)
   if (isNaN(parsedHours) || parsedHours <= 0 || parsedHours > 24) {
     return res.status(400).json({ error: 'Hours must be between 0.25 and 24' })
@@ -909,6 +912,8 @@ app.post('/api/timesheets', (req, res) => {
 
 app.put('/api/timesheets/:id', (req, res) => {
   const { project_id, date, hours, description } = req.body
+  const today = new Date().toISOString().split('T')[0]
+  if (date > today) return res.status(400).json({ error: 'Date cannot be in the future' })
   const parsedHours = parseFloat(hours)
   if (isNaN(parsedHours) || parsedHours <= 0 || parsedHours > 24) {
     return res.status(400).json({ error: 'Hours must be between 0.25 and 24' })

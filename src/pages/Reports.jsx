@@ -44,20 +44,13 @@ function businessDays(start, end) {
   return count
 }
 
-function BudgetProgress({ logged, budgeted, pct }) {
-  if (!budgeted) return <span style={{ fontSize: 12, color: '#94a3b8' }}>—</span>
-  const safe  = Math.min(pct ?? 0, 100)
-  const color = (pct ?? 0) >= 100 ? '#dc2626' : (pct ?? 0) >= 80 ? '#d97706' : '#16a34a'
+function CreditsCell({ hours }) {
+  const credits = (+(hours || 0) / 9)
+  if (!hours || +hours === 0) return <span style={{ fontSize: 12, color: '#94a3b8' }}>—</span>
   return (
-    <div style={{ minWidth: 130 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#64748b', marginBottom: 3 }}>
-        <span>{(+logged || 0).toFixed(1)}h / {budgeted}h</span>
-        <span style={{ color, fontWeight: 700 }}>{pct ?? 0}%</span>
-      </div>
-      <div style={{ height: 5, background: '#e2e8f0', borderRadius: 99, overflow: 'hidden' }}>
-        <div style={{ width: `${safe}%`, height: '100%', background: color, borderRadius: 99, transition: 'width 0.3s' }} />
-      </div>
-    </div>
+    <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
+      {credits.toFixed(2)} <span style={{ fontSize: 11, color: '#64748b', fontWeight: 400 }}>credits</span>
+    </span>
   )
 }
 
@@ -96,18 +89,18 @@ export default function Reports() {
   function exportCsv() {
     const suffix = [from, to].filter(Boolean).join('_to_') || 'all'
     if (view === 'project') {
-      const header = ['Project Code', 'Project Name', 'Type', 'Client', 'Budgeted Hours', 'Hours Logged', 'Budget %', 'Report Initiated', 'Report Delivered', 'TAT (days)', 'Users Assigned']
+      const header = ['Project Code', 'Project Name', 'Type', 'Client', 'Hours Logged', 'Credits', 'Report Initiated', 'Report Delivered', 'TAT (days)', 'Users Assigned']
       const rows = byProject.map(r => [
         r.project_code, r.project_name, r.type_name || '', r.client_name || '',
-        r.budgeted_hours ?? '', r.total_hours.toFixed(2), r.budget_pct ?? '',
+        r.total_hours.toFixed(2), ((+r.total_hours || 0) / 9).toFixed(2),
         r.report_initiated || '', r.report_delivered || '',
         businessDays(r.report_initiated, r.report_delivered) ?? '',
         (r.users_assigned || '').replace(/,/g, '; '),
       ])
       downloadCsv(`reports-by-project-${suffix}.csv`, [header, ...rows])
     } else {
-      const header = ['User Name', 'Email', 'Total Hours', 'Entries', 'Projects']
-      const rows = byUser.map(u => [u.user_name, u.email, u.total_hours.toFixed(2), u.entry_count, u.project_count])
+      const header = ['User Name', 'Email', 'Total Hours', 'Credits', 'Entries', 'Projects']
+      const rows = byUser.map(u => [u.user_name, u.email, u.total_hours.toFixed(2), ((+u.total_hours || 0) / 9).toFixed(2), u.entry_count, u.project_count])
       downloadCsv(`reports-by-user-${suffix}.csv`, [header, ...rows])
     }
   }
@@ -159,7 +152,7 @@ export default function Reports() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                {['Project', 'Type', 'Client', 'Hours Logged', 'Budget', 'Users Assigned', 'TAT (days)'].map(h => (
+                {['Project', 'Type', 'Client', 'Hours Logged', 'Credits', 'Users Assigned', 'TAT (days)'].map(h => (
                   <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -184,7 +177,7 @@ export default function Reports() {
                     <td style={{ padding: '13px 16px', color: '#475569' }}>{r.client_name || <span style={{ color: '#cbd5e1' }}>—</span>}</td>
                     <td style={{ padding: '13px 16px', fontWeight: 700, color: '#0f172a' }}>{r.total_hours.toFixed(1)}h</td>
                     <td style={{ padding: '13px 16px' }}>
-                      <BudgetProgress logged={r.total_hours} budgeted={r.budgeted_hours} pct={r.budget_pct} />
+                      <CreditsCell hours={r.total_hours} />
                     </td>
                     <td style={{ padding: '13px 16px', maxWidth: 180 }}>
                       {userNames.length > 0
