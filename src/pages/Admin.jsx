@@ -34,14 +34,14 @@ function ProjectTypesTab() {
   const [data,      setData]      = useState([])
   const [showModal, setShowModal] = useState(false)
   const [editing,   setEditing]   = useState(null)
-  const [form,      setForm]      = useState({ name: '', color: '#2563eb', description: '' })
+  const [form,      setForm]      = useState({ name: '', description: '' })
   const [error,     setError]     = useState('')
 
   useEffect(() => { load() }, [])
   function load() { api.get('/project-types').then(setData) }
 
-  function openAdd()   { setEditing(null); setForm({ name: '', color: '#2563eb', description: '' }); setError(''); setShowModal(true) }
-  function openEdit(t) { setEditing(t); setForm({ name: t.name, color: t.color || '#2563eb', description: t.description || '' }); setError(''); setShowModal(true) }
+  function openAdd()   { setEditing(null); setForm({ name: '', description: '' }); setError(''); setShowModal(true) }
+  function openEdit(t) { setEditing(t); setForm({ name: t.name, description: t.description || '' }); setError(''); setShowModal(true) }
 
   async function submit(e) {
     e.preventDefault()
@@ -60,7 +60,7 @@ function ProjectTypesTab() {
   }
 
   async function toggle(t) {
-    await api.put('/project-types/' + t.id, { name: t.name, color: t.color, description: t.description || '', active: t.active ? 0 : 1 })
+    await api.put('/project-types/' + t.id, { name: t.name, description: t.description, active: t.active ? 0 : 1 })
     load()
   }
 
@@ -69,8 +69,6 @@ function ProjectTypesTab() {
     await api.delete('/project-types/' + id)
     load()
   }
-
-  const PRESET_COLORS = ['#2563eb','#16a34a','#d97706','#dc2626','#9333ea','#0891b2','#db2777','#65a30d','#475569','#f97316']
 
   return (
     <div>
@@ -84,11 +82,11 @@ function ProjectTypesTab() {
         ) : data.map((t, i) => (
           <tr key={t.id} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
             <td style={{ padding: '13px 16px' }}>
-              <span style={{ background: (t.color || '#64748b') + '22', color: t.color || '#64748b', fontSize: 13, fontWeight: 600, padding: '4px 12px', borderRadius: 20, border: `1px solid ${(t.color || '#64748b')}44` }}>
+              <span style={{ background: '#eff6ff', color: '#2563eb', fontSize: 13, fontWeight: 600, padding: '4px 12px', borderRadius: 20, border: '1px solid #bfdbfe' }}>
                 {t.name}
               </span>
             </td>
-            <td style={{ padding: '13px 16px', color: '#475569', fontSize: 13, maxWidth: 360 }}>
+            <td style={{ padding: '13px 16px', color: '#475569', fontSize: 13, maxWidth: 400 }}>
               {t.description || <span style={{ color: '#cbd5e1' }}>—</span>}
             </td>
             <td style={{ padding: '13px 16px' }}><StatusBadge active={t.active} /></td>
@@ -103,15 +101,15 @@ function ProjectTypesTab() {
         ))}
       </TableShell>
       {showModal && (
-        <Modal title={editing ? 'Edit Project Type' : 'Add Project Type'} onClose={() => setShowModal(false)} width={400}>
+        <Modal title={editing ? 'Edit Project Type' : 'Add Project Type'} onClose={() => setShowModal(false)} width={480}>
           <form onSubmit={submit}>
             <Field label="Type Name" required>
-              <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={iStyle} required autoFocus placeholder="e.g. Qualitative, Quantitative" />
+              <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={iStyle} required autoFocus placeholder="e.g. GCC Report, Industry Report" />
             </Field>
             <Field label="Description">
               <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
-                placeholder="Brief description of this project type…"
-                rows={3} style={{ ...iStyle, resize: 'vertical' }} />
+                rows={4} style={{ ...iStyle, resize: 'vertical' }}
+                placeholder="Describe what this report type covers…" />
             </Field>
             <ErrMsg msg={error} />
             <ModalBtns onClose={() => setShowModal(false)} label={editing ? 'Save' : 'Add Type'} />

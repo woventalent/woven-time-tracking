@@ -44,16 +44,6 @@ function businessDays(start, end) {
   return count
 }
 
-function CreditsCell({ hours }) {
-  const credits = (+(hours || 0) / 9)
-  if (!hours || +hours === 0) return <span style={{ fontSize: 12, color: '#94a3b8' }}>—</span>
-  return (
-    <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
-      {credits.toFixed(2)} <span style={{ fontSize: 11, color: '#64748b', fontWeight: 400 }}>credits</span>
-    </span>
-  )
-}
-
 function downloadCsv(filename, rows) {
   const escape = v => {
     const s = (v == null ? '' : String(v))
@@ -92,7 +82,7 @@ export default function Reports() {
       const header = ['Project Code', 'Project Name', 'Type', 'Client', 'Hours Logged', 'Credits', 'Report Initiated', 'Report Delivered', 'TAT (days)', 'Users Assigned']
       const rows = byProject.map(r => [
         r.project_code, r.project_name, r.type_name || '', r.client_name || '',
-        r.total_hours.toFixed(2), ((+r.total_hours || 0) / 9).toFixed(2),
+        r.total_hours.toFixed(2), (r.total_hours / 9).toFixed(2),
         r.report_initiated || '', r.report_delivered || '',
         businessDays(r.report_initiated, r.report_delivered) ?? '',
         (r.users_assigned || '').replace(/,/g, '; '),
@@ -177,7 +167,8 @@ export default function Reports() {
                     <td style={{ padding: '13px 16px', color: '#475569' }}>{r.client_name || <span style={{ color: '#cbd5e1' }}>—</span>}</td>
                     <td style={{ padding: '13px 16px', fontWeight: 700, color: '#0f172a' }}>{r.total_hours.toFixed(1)}h</td>
                     <td style={{ padding: '13px 16px' }}>
-                      <CreditsCell hours={r.total_hours} />
+                      <span style={{ fontWeight: 700, color: '#2563eb' }}>{(r.total_hours / 9).toFixed(2)}</span>
+                      <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 4 }}>credits</span>
                     </td>
                     <td style={{ padding: '13px 16px', maxWidth: 180 }}>
                       {userNames.length > 0
