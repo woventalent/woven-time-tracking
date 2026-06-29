@@ -274,6 +274,13 @@ function ClientsTab() {
     loadContacts(cid)
   }
 
+  async function delClient(clientId, clientName) {
+    if (!confirm(`Delete client "${clientName}" and all their contacts? This cannot be undone.`)) return
+    await api.delete('/clients/' + clientId)
+    loadClients()
+    if (expanded === clientId) setExpanded(null)
+  }
+
   function openAddContact(cid) {
     setEditingContact(null)
     setContactForm({ name: '', email: '', phone: '', role: '' })
@@ -312,8 +319,12 @@ function ClientsTab() {
                   {client.project_count} project{client.project_count !== 1 ? 's' : ''}
                 </span>
                 <button onClick={e => { e.stopPropagation(); openAddContact(client.id) }}
-                  style={{ border: '1px solid #e2e8f0', background: '#fff', padding: '5px 12px', borderRadius: 5, fontSize: 12, color: '#475569', cursor: 'pointer' }}>
+                  style={{ border: '1px solid #e2e8f0', background: '#fff', padding: '5px 12px', borderRadius: 5, fontSize: 12, color: '#475569', cursor: 'pointer', marginRight: 6 }}>
                   + Contact
+                </button>
+                <button onClick={e => { e.stopPropagation(); delClient(client.id, client.name) }}
+                  style={{ border: '1px solid #fecaca', background: '#fff', padding: '5px 12px', borderRadius: 5, fontSize: 12, color: '#ef4444', cursor: 'pointer' }}>
+                  Delete
                 </button>
               </div>
               {expanded === client.id && (

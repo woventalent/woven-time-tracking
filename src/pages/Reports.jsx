@@ -44,23 +44,6 @@ function businessDays(start, end) {
   return count
 }
 
-function BudgetProgress({ logged, budgeted, pct }) {
-  if (!budgeted) return <span style={{ fontSize: 12, color: '#94a3b8' }}>—</span>
-  const safe  = Math.min(pct ?? 0, 100)
-  const color = (pct ?? 0) >= 100 ? '#dc2626' : (pct ?? 0) >= 80 ? '#d97706' : '#16a34a'
-  return (
-    <div style={{ minWidth: 130 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#64748b', marginBottom: 3 }}>
-        <span>{(+logged || 0).toFixed(1)}h / {budgeted}h</span>
-        <span style={{ color, fontWeight: 700 }}>{pct ?? 0}%</span>
-      </div>
-      <div style={{ height: 5, background: '#e2e8f0', borderRadius: 99, overflow: 'hidden' }}>
-        <div style={{ width: `${safe}%`, height: '100%', background: color, borderRadius: 99, transition: 'width 0.3s' }} />
-      </div>
-    </div>
-  )
-}
-
 function downloadCsv(filename, rows) {
   const escape = v => {
     const s = (v == null ? '' : String(v))
@@ -106,8 +89,8 @@ export default function Reports() {
       ])
       downloadCsv(`reports-by-project-${suffix}.csv`, [header, ...rows])
     } else {
-      const header = ['User Name', 'Email', 'Total Hours', 'Entries', 'Projects']
-      const rows = byUser.map(u => [u.user_name, u.email, u.total_hours.toFixed(2), u.entry_count, u.project_count])
+      const header = ['User Name', 'Email', 'Total Hours', 'Credits', 'Entries', 'Projects']
+      const rows = byUser.map(u => [u.user_name, u.email, u.total_hours.toFixed(2), ((+u.total_hours || 0) / 9).toFixed(2), u.entry_count, u.project_count])
       downloadCsv(`reports-by-user-${suffix}.csv`, [header, ...rows])
     }
   }
