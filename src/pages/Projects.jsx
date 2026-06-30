@@ -125,7 +125,7 @@ export default function Projects({ onLogTime }) {
         <table style={{ width: '100%', minWidth: 1000, borderCollapse: 'collapse', fontSize: 13.5 }}>
           <thead>
             <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-              {['Code', 'Project Name', 'Type', 'Request Date', 'Client', 'Requestor', 'Credits', 'Status', 'Report Initiated', 'Report Delivered', ''].map(h => (
+              {['Code', 'Project Name', 'Type', 'Request Date', 'Client', 'Requestor', ...(isAdmin ? ['Credits'] : []), 'Status', 'Report Initiated', 'Report Delivered', ''].map(h => (
                 <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
@@ -170,9 +170,11 @@ export default function Projects({ onLogTime }) {
                       </>
                     ) : <span style={{ color: '#cbd5e1' }}>—</span>}
                   </td>
-                  <td style={{ padding: '13px 16px' }}>
-                    <CreditsDisplay hours={p.total_hours} />
-                  </td>
+                  {isAdmin && (
+                    <td style={{ padding: '13px 16px' }}>
+                      <CreditsDisplay hours={p.total_hours} />
+                    </td>
+                  )}
                   <td style={{ padding: '13px 16px' }}>
                     <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: sc.bg, color: sc.fg }}>
                       {p.status.replace('_', ' ')}
@@ -218,6 +220,7 @@ export default function Projects({ onLogTime }) {
       {detailProject && (
         <ProjectDetail
           project={detailProject}
+          isAdmin={isAdmin}
           onClose={() => setDetail(null)}
           onProjectUpdate={updated => setDetail(updated)}
         />
@@ -239,7 +242,8 @@ function ProjectModal({ project, clients, projectTypes, wsUsers, onSave, onClose
     report_initiated:     project?.report_initiated     ?? '',
     report_delivered:     project?.report_delivered     ?? '',
     description:          project?.description          ?? '',
-    assigned_user_id:     '',
+    member_ids:           [],
+    spoc_user_id:         '',
   })
   const [contacts, setContacts] = useState([])
   const [error,    setError]    = useState('')
@@ -286,15 +290,49 @@ function ProjectModal({ project, clients, projectTypes, wsUsers, onSave, onClose
             rows={3} style={{ ...iStyle, resize: 'vertical' }} />
         </Field>
         {!project && wsUsers.length > 0 && (
-          <Field label="Assign Team Member">
-            <select value={form.assigned_user_id} onChange={e => setForm({ ...form, assigned_user_id: e.target.value })} style={iStyle}>
-              <option value="">— select a user (optional) —</option>
-              {wsUsers.map(u => <option key={u.id} value={u.id}>{u.name} — {u.email}</option>)}
-            </select>
-            {form.assigned_user_id && (
-              <p style={{ fontSize: 12, color: '#2563eb', marginTop: 5 }}>An email notification will be sent to this user.</p>
+          <>
+            <Field label="Assign Team Members">
+              <div style={{ border: '1px solid #cbd5e1', borderRadius: 6, maxHeight: 160, overflowY: 'auto', background: '#fff' }}>
+                {wsUsers.map(u => {
+                  const uid = String(u.id)
+                  const checked = form.member_ids.includes(uid)
+                  return (
+                    <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={e => {
+                          setForm(f => ({
+                            ...f,
+                            member_ids: e.target.checked
+                              ? [...f.member_ids, uid]
+                              : f.member_ids.filter(id => id !== uid),
+                            spoc_user_id: !e.target.checked && f.spoc_user_id === uid ? '' : f.spoc_user_id,
+                          }))
+                        }}
+                      />
+                      <span style={{ fontSize: 13.5, color: '#0f172a' }}>{u.name}</span>
+                      <span style={{ fontSize: 12, color: '#94a3b8' }}>{u.email}</span>
+                    </label>
+                  )
+                })}
+              </div>
+              {form.member_ids.length > 0 && (
+                <p style={{ fontSize: 12, color: '#2563eb', marginTop: 5 }}>Email notifications will be sent to assigned members.</p>
+              )}
+            </Field>
+            {form.member_ids.length > 0 && (
+              <Field label="SPOC (Point of Contact)">
+                <select value={form.spoc_user_id} onChange={e => setForm(f => ({ ...f, spoc_user_id: e.target.value }))} style={iStyle}>
+                  <option value="">— No SPOC —</option>
+                  {wsUsers.filter(u => form.member_ids.includes(String(u.id))).map(u => (
+                    <option key={u.id} value={String(u.id)}>{u.name}</option>
+                  ))}
+                </select>
+                <p style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>The SPOC manages the project and is the primary point of contact.</p>
+              </Field>
             )}
-          </Field>
+          </>
         )}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <Field label="Project Type">
@@ -362,7 +400,7 @@ function ProjectModal({ project, clients, projectTypes, wsUsers, onSave, onClose
 }
 
 // ── Project detail panel ──────────────────────────────────────────────────────
-function ProjectDetail({ project, onClose, onProjectUpdate }) {
+function ProjectDetail({ project, isAdmin, onClose, onProjectUpdate }) {
   const [tab,       setTab]       = useState('members')
   const [members,   setMembers]   = useState([])
   const [wsUsers,   setWsUsers]   = useState([])
@@ -393,6 +431,11 @@ function ProjectDetail({ project, onClose, onProjectUpdate }) {
     await fetch('/api/projects/' + project.id + '/members/' + uid, { method: 'DELETE' })
     loadMembers()
     refreshProject()
+  }
+
+  async function setSpoc(uid) {
+    await fetch('/api/projects/' + project.id + '/members/' + uid + '/spoc', { method: 'PATCH' })
+    loadMembers()
   }
 
   async function uploadFile() {
@@ -464,7 +507,7 @@ function ProjectDetail({ project, onClose, onProjectUpdate }) {
 
           <div style={{ display: 'flex', gap: 24, marginTop: 16 }}>
             <StatPill label="Logged"  value={`${(+project.total_hours || 0).toFixed(1)}h`} />
-            <StatPill label="Credits" value={`${((+project.total_hours || 0) / 9).toFixed(2)}`} />
+            {isAdmin && <StatPill label="Credits" value={`${((+project.total_hours || 0) / 9).toFixed(2)}`} />}
             <StatPill label="Entries" value={project.entry_count ?? 0} />
             <StatPill label="Members" value={project.member_count ?? 0} />
           </div>
@@ -499,18 +542,29 @@ function ProjectDetail({ project, onClose, onProjectUpdate }) {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {members.map(m => (
-                    <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                    <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: m.is_spoc ? '#eff6ff' : '#f8fafc', borderRadius: 8, border: `1px solid ${m.is_spoc ? '#bfdbfe' : '#e2e8f0'}` }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#2563eb', color: '#fff', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <div style={{ width: 32, height: 32, borderRadius: '50%', background: m.is_spoc ? '#2563eb' : '#64748b', color: '#fff', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                           {m.name.charAt(0).toUpperCase()}
                         </div>
                         <div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{m.name}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{m.name}</span>
+                            {m.is_spoc ? <span style={{ fontSize: 10, fontWeight: 700, color: '#2563eb', background: '#dbeafe', padding: '1px 6px', borderRadius: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>SPOC</span> : null}
+                          </div>
                           <div style={{ fontSize: 11, color: '#64748b' }}>{m.email}</div>
                         </div>
                       </div>
-                      <button onClick={() => removeMember(m.id)}
-                        style={{ border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {isAdmin && !m.is_spoc && (
+                          <button onClick={() => setSpoc(m.id)}
+                            style={{ border: '1px solid #bfdbfe', background: '#eff6ff', color: '#2563eb', fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 5, cursor: 'pointer' }}>
+                            Set SPOC
+                          </button>
+                        )}
+                        <button onClick={() => removeMember(m.id)}
+                          style={{ border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+                      </div>
                     </div>
                   ))}
                 </div>
