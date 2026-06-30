@@ -290,6 +290,7 @@ ensureColumn('users',              'global_role',          "TEXT DEFAULT NULL")
 ensureColumn('workspaces',         'code_prefix',          "TEXT DEFAULT 'WRI'")
 ensureColumn('projects',           'description',          'TEXT')
 ensureColumn('project_types',      'description',          'TEXT')
+ensureColumn('project_members',    'is_spoc',              'INTEGER NOT NULL DEFAULT 0')
 
 // ── Seed defaults ─────────────────────────────────────────────────────────────
 db.exec(`INSERT OR IGNORE INTO workspaces (id, name, slug)
@@ -745,7 +746,7 @@ app.get('/api/projects', (req, res) => {
 })
 
 app.post('/api/projects', async (req, res) => {
-  const { name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours, report_initiated, report_delivered, description, assigned_user_id } = req.body
+  const { name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours, report_initiated, report_delivered, description, member_ids, spoc_user_id } = req.body
   if (!name?.trim()) return res.status(400).json({ error: 'Project name is required' })
   if (budgeted_hours !== undefined && budgeted_hours !== null && budgeted_hours !== '') {
     const bh = Number(budgeted_hours)
@@ -756,24 +757,36 @@ app.post('/api/projects', async (req, res) => {
     'INSERT INTO projects (workspace_id, project_code, name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours, report_initiated, report_delivered, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(req.workspaceId, code, name.trim(), project_type_id || null, request_date || null, requestor_contact_id || null, client_id || null, budgeted_hours || null, report_initiated || null, report_delivered || null, description || null)
   const projectId = r.lastInsertRowid
-  db.prepare('INSERT OR IGNORE INTO project_members (project_id, user_id) VALUES (?, ?)').run(projectId, req.userId)
-  if (assigned_user_id && Number(assigned_user_id) !== req.userId) {
-    db.prepare('INSERT OR IGNORE INTO project_members (project_id, user_id) VALUES (?, ?)').run(projectId, assigned_user_id)
-    const assignedUser  = db.prepare('SELECT name, email FROM users WHERE id = ?').get(assigned_user_id)
-    const client        = client_id ? db.prepare('SELECT name FROM clients WHERE id = ?').get(client_id) : null
-    const requestorRow  = requestor_contact_id ? db.prepare('SELECT name FROM contacts WHERE id = ?').get(requestor_contact_id) : null
-    if (assignedUser?.email) {
-      sendAssignmentEmail({
-        fromEmail:     req.userEmail,
-        fromName:      req.userName,
-        toEmail:       assignedUser.email,
-        toName:        assignedUser.name,
-        project:       { name: name.trim(), description: description || '', status: 'active', senderName: req.userName },
-        requestorName: requestorRow?.name || null,
-        clientName:    client?.name || null,
-      })
+
+  const client       = client_id ? db.prepare('SELECT name FROM clients WHERE id = ?').get(client_id) : null
+  const requestorRow = requestor_contact_id ? db.prepare('SELECT name FROM contacts WHERE id = ?').get(requestor_contact_id) : null
+
+  if (Array.isArray(member_ids) && member_ids.length > 0) {
+    for (const uid of member_ids) {
+      const numUid  = Number(uid)
+      const isSPOC  = spoc_user_id && numUid === Number(spoc_user_id) ? 1 : 0
+      db.prepare('INSERT OR IGNORE INTO project_members (project_id, user_id, is_spoc) VALUES (?, ?, ?)').run(projectId, numUid, isSPOC)
+      if (numUid !== req.userId) {
+        const assignedUser = db.prepare('SELECT name, email FROM users WHERE id = ?').get(numUid)
+        if (assignedUser?.email) {
+          sendAssignmentEmail({
+            fromEmail:     req.userEmail,
+            fromName:      req.userName,
+            toEmail:       assignedUser.email,
+            toName:        assignedUser.name,
+            project:       { name: name.trim(), description: description || '', status: 'active', senderName: req.userName },
+            requestorName: requestorRow?.name || null,
+            clientName:    client?.name || null,
+          })
+        }
+      }
     }
+    // Ensure admin creator is always a member (without SPOC unless explicitly set)
+    db.prepare('INSERT OR IGNORE INTO project_members (project_id, user_id, is_spoc) VALUES (?, ?, 0)').run(projectId, req.userId)
+  } else {
+    db.prepare('INSERT OR IGNORE INTO project_members (project_id, user_id, is_spoc) VALUES (?, ?, 0)').run(projectId, req.userId)
   }
+
   res.json({ id: projectId, project_code: code, name: name.trim() })
 })
 
@@ -802,10 +815,10 @@ app.delete('/api/projects/:id', (req, res) => {
 
 app.get('/api/projects/:id/members', (req, res) => {
   res.json(db.prepare(`
-    SELECT u.*, pm.added_at FROM users u
+    SELECT u.*, pm.added_at, pm.is_spoc FROM users u
     JOIN project_members pm ON pm.user_id = u.id
     WHERE pm.project_id = ?
-    ORDER BY u.name
+    ORDER BY pm.is_spoc DESC, u.name
   `).all(req.params.id))
 })
 
@@ -821,6 +834,15 @@ app.delete('/api/projects/:id/members/:userId', (req, res) => {
   const project = db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId)
   if (!project) return res.status(404).json({ error: 'Project not found' })
   db.prepare('DELETE FROM project_members WHERE project_id = ? AND user_id = ?').run(req.params.id, req.params.userId)
+  res.json({ success: true })
+})
+
+app.patch('/api/projects/:id/members/:userId/spoc', (req, res) => {
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Admin only' })
+  const project = db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId)
+  if (!project) return res.status(404).json({ error: 'Project not found' })
+  db.prepare('UPDATE project_members SET is_spoc = 0 WHERE project_id = ?').run(req.params.id)
+  db.prepare('UPDATE project_members SET is_spoc = 1 WHERE project_id = ? AND user_id = ?').run(req.params.id, req.params.userId)
   res.json({ success: true })
 })
 

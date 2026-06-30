@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { api } from '../api.js'
+import { useAuth } from '../contexts/AuthContext.jsx'
 
 const iStyle = {
   padding: '8px 12px', border: '1px solid #cbd5e1',
@@ -58,6 +59,8 @@ function downloadCsv(filename, rows) {
 }
 
 export default function Reports() {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [view,      setView]    = useState('project')
   const [byProject, setByProj]  = useState([])
   const [byUser,    setByUser]  = useState([])
@@ -79,18 +82,18 @@ export default function Reports() {
   function exportCsv() {
     const suffix = [from, to].filter(Boolean).join('_to_') || 'all'
     if (view === 'project') {
-      const header = ['Project Code', 'Project Name', 'Type', 'Client', 'Hours Logged', 'Credits', 'Report Initiated', 'Report Delivered', 'TAT (days)', 'Users Assigned']
+      const header = ['Project Code', 'Project Name', 'Type', 'Client', 'Hours Logged', ...(isAdmin ? ['Credits'] : []), 'Report Initiated', 'Report Delivered', 'TAT (days)', 'Users Assigned']
       const rows = byProject.map(r => [
         r.project_code, r.project_name, r.type_name || '', r.client_name || '',
-        r.total_hours.toFixed(2), (r.total_hours / 9).toFixed(2),
+        r.total_hours.toFixed(2), ...(isAdmin ? [(r.total_hours / 9).toFixed(2)] : []),
         r.report_initiated || '', r.report_delivered || '',
         businessDays(r.report_initiated, r.report_delivered) ?? '',
         (r.users_assigned || '').replace(/,/g, '; '),
       ])
       downloadCsv(`reports-by-project-${suffix}.csv`, [header, ...rows])
     } else {
-      const header = ['User Name', 'Email', 'Total Hours', 'Credits', 'Entries', 'Projects']
-      const rows = byUser.map(u => [u.user_name, u.email, u.total_hours.toFixed(2), ((+u.total_hours || 0) / 9).toFixed(2), u.entry_count, u.project_count])
+      const header = ['User Name', 'Email', 'Total Hours', 'Entries', 'Projects']
+      const rows = byUser.map(u => [u.user_name, u.email, u.total_hours.toFixed(2), u.entry_count, u.project_count])
       downloadCsv(`reports-by-user-${suffix}.csv`, [header, ...rows])
     }
   }
@@ -142,14 +145,14 @@ export default function Reports() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                {['Project', 'Type', 'Client', 'Hours Logged', 'Credits', 'Users Assigned', 'TAT (days)'].map(h => (
+                {['Project', 'Type', 'Client', 'Hours Logged', ...(isAdmin ? ['Credits'] : []), 'Users Assigned', 'TAT (days)'].map(h => (
                   <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {byProject.length === 0 ? (
-                <tr><td colSpan={7} style={{ padding: '48px', textAlign: 'center', color: '#94a3b8' }}>No data yet</td></tr>
+                <tr><td colSpan={isAdmin ? 7 : 6} style={{ padding: '48px', textAlign: 'center', color: '#94a3b8' }}>No data yet</td></tr>
               ) : byProject.map((r, i) => {
                 const tat = businessDays(r.report_initiated, r.report_delivered)
                 const userNames = r.users_assigned ? r.users_assigned.split(',') : []
@@ -166,10 +169,12 @@ export default function Reports() {
                     </td>
                     <td style={{ padding: '13px 16px', color: '#475569' }}>{r.client_name || <span style={{ color: '#cbd5e1' }}>—</span>}</td>
                     <td style={{ padding: '13px 16px', fontWeight: 700, color: '#0f172a' }}>{r.total_hours.toFixed(1)}h</td>
-                    <td style={{ padding: '13px 16px' }}>
-                      <span style={{ fontWeight: 700, color: '#2563eb' }}>{(r.total_hours / 9).toFixed(2)}</span>
-                      <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 4 }}>credits</span>
-                    </td>
+                    {isAdmin && (
+                      <td style={{ padding: '13px 16px' }}>
+                        <span style={{ fontWeight: 700, color: '#2563eb' }}>{(r.total_hours / 9).toFixed(2)}</span>
+                        <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 4 }}>credits</span>
+                      </td>
+                    )}
                     <td style={{ padding: '13px 16px', maxWidth: 180 }}>
                       {userNames.length > 0
                         ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
