@@ -300,6 +300,12 @@ for (const t of ['clients', 'contacts', 'requestors', 'projects']) {
   db.exec(`UPDATE "${t}" SET workspace_id = 1 WHERE workspace_id IS NULL`)
 }
 
+// One-time cleanup: revoke workspace access that was granted only because of the
+// removed auto-join-to-workspace-1 fallback, for an account outside the configured tenant.
+db.exec(`DELETE FROM workspace_members WHERE user_id IN (
+  SELECT id FROM users WHERE email = 'noble.mavely@nativeworld.com'
+)`)
+
 // Migrate old employee_id timesheet entries → user_id via email match (only if employees table exists)
 const employeesExists = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='employees'`).get()
 if (employeesExists) {
@@ -434,7 +440,6 @@ app.get('/auth/callback', async (req, res) => {
     }
     const user = upsertUser({ microsoftOid: profile.id, email, name: profile.displayName })
     maybeElevateSuperAdmin(user)
-    if (getUserWorkspaces(user.id).length === 0) ensureWorkspaceMember(user.id, 1)
     const ws = getUserWorkspaces(user.id)
     const sessionId = createSession(user.id, ws.length === 1 ? ws[0].id : null)
     setSessionCookie(res, sessionId)
@@ -451,7 +456,6 @@ app.post('/auth/dev-login', (req, res) => {
   if (!email || !name) return res.status(400).json({ error: 'Email and name required' })
   const user = upsertUser({ microsoftOid: null, email, name })
   maybeElevateSuperAdmin(user)
-  if (getUserWorkspaces(user.id).length === 0) ensureWorkspaceMember(user.id, 1)
   const ws = getUserWorkspaces(user.id)
   const sessionId = createSession(user.id, ws.length === 1 ? ws[0].id : null)
   setSessionCookie(res, sessionId)
@@ -496,18 +500,36 @@ app.get('/api/auth/workspaces', (req, res) => {
   res.json(getUserWorkspaces(s.user_id))
 })
 
+// Any authenticated user can create a workspace, even before joining one —
+// registered ahead of the workspace-membership guard below for that reason.
+app.post('/api/admin/workspaces', (req, res) => {
+  const s = getSession(req.cookies?.wtt_session)
+  if (!s) return res.status(401).json({ error: 'Not authenticated' })
+  const { name, code_prefix } = req.body
+  if (!name?.trim()) return res.status(400).json({ error: 'Workspace name is required' })
+  if (!code_prefix?.trim()) return res.status(400).json({ error: 'Code prefix is required' })
+  const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  const prefix = code_prefix.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
+  try {
+    const r = db.prepare('INSERT INTO workspaces (name, slug, code_prefix) VALUES (?, ?, ?)').run(name.trim(), slug, prefix)
+    ensureWorkspaceMember(s.user_id, r.lastInsertRowid, 'admin')
+    res.json({ id: r.lastInsertRowid, name: name.trim(), slug, code_prefix: prefix })
+  } catch { res.status(400).json({ error: 'Workspace name or slug already exists' }) }
+})
+
 // ── Auth guard ────────────────────────────────────────────────────────────────
 app.use('/api', (req, res, next) => {
   const s = getSession(req.cookies?.wtt_session)
   if (!s) return res.status(401).json({ error: 'Not authenticated' })
   if (!s.workspace_id) return res.status(403).json({ error: 'No workspace selected' })
+  const wm = db.prepare('SELECT role FROM workspace_members WHERE user_id = ? AND workspace_id = ?').get(s.user_id, s.workspace_id)
+  if (!wm) return res.status(403).json({ error: 'Not a member of this workspace' })
   req.userId      = Number(s.user_id)
   req.userEmail   = s.user_email ?? null
   req.userName    = s.user_name ?? null
   req.workspaceId = Number(s.workspace_id)
   req.globalRole  = s.user_global_role ?? null
-  const wm = db.prepare('SELECT role FROM workspace_members WHERE user_id = ? AND workspace_id = ?').get(req.userId, req.workspaceId)
-  req.userRole = wm?.role ?? 'member'
+  req.userRole    = wm.role
   next()
 })
 
@@ -681,19 +703,6 @@ app.get('/api/admin/workspaces', (req, res) => {
     LEFT JOIN projects p           ON p.workspace_id  = w.id
     GROUP BY w.id ORDER BY w.name
   `).all())
-})
-
-app.post('/api/admin/workspaces', (req, res) => {
-  const { name, code_prefix } = req.body
-  if (!name?.trim()) return res.status(400).json({ error: 'Workspace name is required' })
-  if (!code_prefix?.trim()) return res.status(400).json({ error: 'Code prefix is required' })
-  const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-  const prefix = code_prefix.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
-  try {
-    const r = db.prepare('INSERT INTO workspaces (name, slug, code_prefix) VALUES (?, ?, ?)').run(name.trim(), slug, prefix)
-    ensureWorkspaceMember(req.userId, r.lastInsertRowid, 'admin')
-    res.json({ id: r.lastInsertRowid, name: name.trim(), slug, code_prefix: prefix })
-  } catch { res.status(400).json({ error: 'Workspace name or slug already exists' }) }
 })
 
 app.put('/api/admin/workspaces/:id', (req, res) => {
