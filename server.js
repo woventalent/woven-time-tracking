@@ -421,7 +421,18 @@ app.get('/auth/callback', async (req, res) => {
     const profile = await (await fetch('https://graph.microsoft.com/v1.0/me', {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     })).json()
-    const user = upsertUser({ microsoftOid: profile.id, email: profile.mail || profile.userPrincipalName, name: profile.displayName })
+    const email = profile.mail || profile.userPrincipalName
+    // Defense-in-depth: reject guest/external accounts whose email domain doesn't
+    // match the configured tenant, even if Entra ID authenticated them (e.g. B2B guests).
+    if (TENANT.includes('.')) {
+      const tenantDomain = TENANT.toLowerCase()
+      const emailDomain = (email || '').split('@')[1]?.toLowerCase()
+      if (emailDomain !== tenantDomain) {
+        console.error(`MS auth rejected: email domain "${emailDomain}" does not match tenant "${tenantDomain}"`)
+        return res.redirect(`/?login-error=${encodeURIComponent('tenant_not_allowed')}`)
+      }
+    }
+    const user = upsertUser({ microsoftOid: profile.id, email, name: profile.displayName })
     maybeElevateSuperAdmin(user)
     if (getUserWorkspaces(user.id).length === 0) ensureWorkspaceMember(user.id, 1)
     const ws = getUserWorkspaces(user.id)
