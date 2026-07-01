@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext.jsx'
+import Modal from './Modal.jsx'
 
 const NAV = [
   { id: 'projects',   label: 'Projects',   Icon: FolderIcon },
@@ -12,6 +13,10 @@ export default function Sidebar({ current, onNav }) {
   const [showUserMenu, setShowUserMenu]   = useState(false)
   const [showWsMenu,   setShowWsMenu]     = useState(false)
   const [workspaces,   setWorkspaces]     = useState([])
+  const [showNewWs,    setShowNewWs]      = useState(false)
+  const [newWsForm,    setNewWsForm]      = useState({ name: '', code_prefix: '' })
+  const [newWsError,   setNewWsError]     = useState('')
+  const [creatingWs,   setCreatingWs]     = useState(false)
 
   async function openWsSwitcher() {
     if (!showWsMenu) {
@@ -26,6 +31,28 @@ export default function Sidebar({ current, onNav }) {
   async function switchWs(id) {
     setShowWsMenu(false)
     await selectWorkspace(id)
+  }
+
+  function openNewWs() {
+    setShowWsMenu(false)
+    setNewWsForm({ name: '', code_prefix: '' })
+    setNewWsError('')
+    setShowNewWs(true)
+  }
+
+  async function createWs(e) {
+    e.preventDefault()
+    setNewWsError(''); setCreatingWs(true)
+    try {
+      const r = await fetch('/api/admin/workspaces', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newWsForm),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error)
+      setShowNewWs(false)
+      await selectWorkspace(d.id)
+    } catch (err) { setNewWsError(err.message) }
+    finally { setCreatingWs(false) }
   }
 
   return (
@@ -71,9 +98,45 @@ export default function Sidebar({ current, onNav }) {
                 {ws.id === workspace?.id && <span style={{ marginLeft: 'auto', fontSize: 10, color: '#3b82f6' }}>✓</span>}
               </button>
             ))}
+            <button onClick={openNewWs} style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+              padding: '10px 14px', border: 'none', borderTop: '1px solid #334155',
+              background: 'transparent', color: '#93c5fd',
+              fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+            }}>
+              + Create workspace
+            </button>
           </div>
         )}
       </div>
+
+      {showNewWs && (
+        <Modal title="New Workspace" onClose={() => setShowNewWs(false)} width={380}>
+          <form onSubmit={createWs}>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Workspace Name</label>
+            <input
+              value={newWsForm.name} onChange={e => setNewWsForm({ ...newWsForm, name: e.target.value })}
+              placeholder="e.g. Research & Insights" required autoFocus
+              style={{ width: '100%', padding: '9px 12px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 14, marginBottom: 14 }}
+            />
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Project Code Prefix</label>
+            <input
+              value={newWsForm.code_prefix}
+              onChange={e => setNewWsForm({ ...newWsForm, code_prefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') })}
+              placeholder="e.g. WRI, MKT, FIN" maxLength={6} required
+              style={{ width: '100%', padding: '9px 12px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 14 }}
+            />
+            <p style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>2–6 uppercase letters. Projects will be numbered e.g. {newWsForm.code_prefix || 'WRI'}-001.</p>
+            {newWsError && <div style={{ color: '#ef4444', fontSize: 13, marginBottom: 12, padding: '8px 12px', background: '#fef2f2', borderRadius: 6 }}>{newWsError}</div>}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 14 }}>
+              <button type="button" onClick={() => setShowNewWs(false)} style={{ padding: '9px 16px', border: '1px solid #e2e8f0', background: '#fff', borderRadius: 7, fontSize: 13.5, cursor: 'pointer' }}>Cancel</button>
+              <button type="submit" disabled={creatingWs} style={{ padding: '9px 18px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>
+                {creatingWs ? 'Creating…' : 'Create Workspace'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
 
       {/* Main nav */}
       <nav style={{ flex: 1, padding: '10px 0' }}>

@@ -684,7 +684,6 @@ app.get('/api/admin/workspaces', (req, res) => {
 })
 
 app.post('/api/admin/workspaces', (req, res) => {
-  if (req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Super admin only' })
   const { name, code_prefix } = req.body
   if (!name?.trim()) return res.status(400).json({ error: 'Workspace name is required' })
   if (!code_prefix?.trim()) return res.status(400).json({ error: 'Code prefix is required' })
