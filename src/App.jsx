@@ -23,18 +23,37 @@ function LoadingScreen() {
   )
 }
 
+const PATH_BY_PAGE = {
+  projects: '/projects', timesheets: '/timesheets', reports: '/reports',
+  calendar: '/calendar', settings: '/settings',
+}
+const PAGE_BY_PATH = Object.fromEntries(Object.entries(PATH_BY_PAGE).map(([page, path]) => [path, page]))
+function pageFromPath(pathname) { return PAGE_BY_PATH[pathname] || 'projects' }
+
 function MainApp() {
-  const [page, setPage] = useState('projects')
+  const [page, setPage] = useState(() => pageFromPath(window.location.pathname))
   const [logTimeProjectId, setLogTimeProjectId] = useState(null)
+
+  useEffect(() => {
+    function onPopState() { setPage(pageFromPath(window.location.pathname)) }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  function goTo(p) {
+    setPage(p)
+    const path = PATH_BY_PAGE[p] || '/projects'
+    if (window.location.pathname !== path) window.history.pushState({}, '', path)
+  }
 
   function handleLogTime(projectId) {
     setLogTimeProjectId(projectId)
-    setPage('timesheets')
+    goTo('timesheets')
   }
 
   function handleNav(p) {
     setLogTimeProjectId(null)
-    setPage(p)
+    goTo(p)
   }
 
   const pages = {
