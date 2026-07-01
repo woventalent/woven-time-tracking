@@ -927,7 +927,7 @@ app.delete('/api/projects/:id/documents/:docId', (req, res) => {
 
 app.get('/api/timesheets', (req, res) => {
   const { project_id, from, to, user_id } = req.query
-  const showAll = req.userRole === 'admin' && req.query.all === 'true'
+  const showAll = req.query.all === 'true'
   let sql = `
     SELECT te.*, p.project_code, p.name AS project_name, c.name AS client_name,
            u.name AS user_name
