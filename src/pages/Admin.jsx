@@ -121,7 +121,7 @@ function ProjectTypesTab() {
 }
 
 // ── Users (was Employees) ─────────────────────────────────────────────────────
-function UsersTab() {
+function UsersTab({ isAdmin }) {
   const [data,      setData]      = useState([])
   const [showModal, setShowModal] = useState(false)
   const [form,      setForm]      = useState({ name: '', email: '', role: 'member' })
@@ -159,11 +159,13 @@ function UsersTab() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <p style={{ color: '#64748b', fontSize: 14 }}>Team members who log time in this workspace. Users are also created automatically on first login.</p>
-        <button onClick={openAdd} style={{ background: '#2563eb', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ Add User</button>
+        {isAdmin && (
+          <button onClick={openAdd} style={{ background: '#2563eb', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ Add User</button>
+        )}
       </div>
-      <TableShell cols={['Name', 'Email', 'Role', 'Projects', 'Actions']}>
+      <TableShell cols={isAdmin ? ['Name', 'Email', 'Role', 'Projects', 'Actions'] : ['Name', 'Email', 'Role', 'Projects']}>
         {data.length === 0 ? (
-          <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>No users yet</td></tr>
+          <tr><td colSpan={isAdmin ? 5 : 4} style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>No users yet</td></tr>
         ) : data.map((u, i) => (
           <tr key={u.id} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
             <td style={{ padding: '13px 16px' }}>
@@ -176,16 +178,22 @@ function UsersTab() {
             </td>
             <td style={{ padding: '13px 16px', color: '#475569' }}>{u.email}</td>
             <td style={{ padding: '13px 16px' }}>
-              <select value={u.role} onChange={e => changeRole(u, e.target.value)}
-                style={{ padding: '4px 8px', border: '1px solid #e2e8f0', borderRadius: 5, fontSize: 12, color: '#475569', cursor: 'pointer', background: '#fff' }}>
-                <option value="member">Member</option>
-                <option value="admin">Admin</option>
-              </select>
+              {isAdmin ? (
+                <select value={u.role} onChange={e => changeRole(u, e.target.value)}
+                  style={{ padding: '4px 8px', border: '1px solid #e2e8f0', borderRadius: 5, fontSize: 12, color: '#475569', cursor: 'pointer', background: '#fff' }}>
+                  <option value="member">Member</option>
+                  <option value="admin">Admin</option>
+                </select>
+              ) : (
+                <span style={{ textTransform: 'capitalize', fontSize: 12, color: '#475569' }}>{u.role}</span>
+              )}
             </td>
             <td style={{ padding: '13px 16px', color: '#64748b' }}>{u.project_count}</td>
-            <td style={{ padding: '13px 16px' }}>
-              <Btn red onClick={() => remove(u)}>Remove</Btn>
-            </td>
+            {isAdmin && (
+              <td style={{ padding: '13px 16px' }}>
+                <Btn red onClick={() => remove(u)}>Remove</Btn>
+              </td>
+            )}
           </tr>
         ))}
       </TableShell>
@@ -586,20 +594,19 @@ function WorkspacesTab() {
   )
 }
 
-const BASE_TABS = [
-  { id: 'project-types', label: 'Project Types',     Component: ProjectTypesTab },
-  { id: 'users',         label: 'Users',              Component: UsersTab },
-  { id: 'clients',       label: 'Clients & Contacts', Component: ClientsTab },
-]
-
 export default function Admin() {
   const { user } = useAuth()
   const isSuperAdmin = user?.globalRole === 'super_admin'
-  const TABS = isSuperAdmin
-    ? [{ id: 'workspaces', label: 'Workspaces', Component: WorkspacesTab }, ...BASE_TABS]
-    : BASE_TABS
+  const isWsAdmin    = user?.role === 'admin' || isSuperAdmin
 
-  const [tab, setTab] = useState('project-types')
+  const TABS = [
+    ...(isSuperAdmin ? [{ id: 'workspaces', label: 'Workspaces', Component: WorkspacesTab }] : []),
+    ...(isWsAdmin ? [{ id: 'project-types', label: 'Project Types', Component: ProjectTypesTab }] : []),
+    { id: 'users', label: 'Users', Component: props => <UsersTab {...props} isAdmin={isWsAdmin} /> },
+    ...(isWsAdmin ? [{ id: 'clients', label: 'Clients & Contacts', Component: ClientsTab }] : []),
+  ]
+
+  const [tab, setTab] = useState(null)
   const found = TABS.find(t => t.id === tab) || TABS[0]
   const { Component } = found
 

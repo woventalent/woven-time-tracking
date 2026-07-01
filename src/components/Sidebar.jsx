@@ -167,25 +167,23 @@ export default function Sidebar({ current, onNav }) {
       {/* Bottom section — Settings + User */}
       <div style={{ borderTop: '1px solid #1e293b', padding: '10px 0 0' }}>
 
-        {/* Settings — admin only */}
-        {user?.role === 'admin' && (
-          <button
-            onClick={() => onNav('settings')}
-            style={{
-              width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-              padding: '8px 18px', border: 'none',
-              background: current === 'settings' ? 'rgba(37,99,235,0.12)' : 'transparent',
-              color: current === 'settings' ? '#7dd3fc' : '#94a3b8',
-              fontSize: 12.5, fontWeight: current === 'settings' ? 600 : 400,
-              textAlign: 'left', cursor: 'pointer',
-              borderLeft: `3px solid ${current === 'settings' ? '#3b82f6' : 'transparent'}`,
-              transition: 'all 0.12s',
-            }}
-          >
-            <GearIcon size={13} />
-            Settings
-          </button>
-        )}
+        {/* Settings */}
+        <button
+          onClick={() => onNav('settings')}
+          style={{
+            width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+            padding: '8px 18px', border: 'none',
+            background: current === 'settings' ? 'rgba(37,99,235,0.12)' : 'transparent',
+            color: current === 'settings' ? '#7dd3fc' : '#94a3b8',
+            fontSize: 12.5, fontWeight: current === 'settings' ? 600 : 400,
+            textAlign: 'left', cursor: 'pointer',
+            borderLeft: `3px solid ${current === 'settings' ? '#3b82f6' : 'transparent'}`,
+            transition: 'all 0.12s',
+          }}
+        >
+          <GearIcon size={13} />
+          Settings
+        </button>
 
         {/* User info */}
         <div style={{ position: 'relative' }}>
