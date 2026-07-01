@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { api } from '../api.js'
 import Modal from '../components/Modal.jsx'
+import { useAuth } from '../contexts/AuthContext.jsx'
 
 const iStyle = {
   width: '100%', padding: '8px 12px', border: '1px solid #cbd5e1',
@@ -21,6 +22,7 @@ function Field({ label, required, children }) {
 function today() { return new Date().toISOString().split('T')[0] }
 
 export default function Timesheets({ initialProjectId }) {
+  const { user } = useAuth()
   const [entries,    setEntries]   = useState([])
   const [projects,   setProjects]  = useState([])  // only assigned projects
   const [wsUsers,    setWsUsers]   = useState([])   // all workspace users
@@ -230,8 +232,12 @@ export default function Timesheets({ initialProjectId }) {
                   {e.description || <span style={{ color: '#cbd5e1' }}>—</span>}
                 </td>
                 <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
-                  <button onClick={() => openEdit(e)} style={{ border: '1px solid #e2e8f0', background: '#fff', padding: '4px 10px', borderRadius: 5, fontSize: 12, color: '#475569', marginRight: 6, cursor: 'pointer' }}>Edit</button>
-                  <button onClick={() => del(e.id)}   style={{ border: '1px solid #fecaca', background: '#fff', padding: '4px 10px', borderRadius: 5, fontSize: 12, color: '#ef4444', cursor: 'pointer' }}>Delete</button>
+                  {e.user_id === user?.id ? (
+                    <>
+                      <button onClick={() => openEdit(e)} style={{ border: '1px solid #e2e8f0', background: '#fff', padding: '4px 10px', borderRadius: 5, fontSize: 12, color: '#475569', marginRight: 6, cursor: 'pointer' }}>Edit</button>
+                      <button onClick={() => del(e.id)}   style={{ border: '1px solid #fecaca', background: '#fff', padding: '4px 10px', borderRadius: 5, fontSize: 12, color: '#ef4444', cursor: 'pointer' }}>Delete</button>
+                    </>
+                  ) : <span style={{ color: '#cbd5e1' }}>—</span>}
                 </td>
               </tr>
             ))}
