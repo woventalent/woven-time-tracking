@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar.jsx'
 import Projects from './pages/Projects.jsx'
 import Timesheets from './pages/Timesheets.jsx'
 import Reports from './pages/Reports.jsx'
+import Calendar from './pages/Calendar.jsx'
 import Admin from './pages/Admin.jsx'
 import Login from './pages/Login.jsx'
 import WorkspaceSelect from './pages/WorkspaceSelect.jsx'
@@ -40,6 +41,7 @@ function MainApp() {
     projects:   <Projects onLogTime={handleLogTime} />,
     timesheets: <Timesheets initialProjectId={logTimeProjectId} />,
     reports:    <Reports />,
+    calendar:   <Calendar />,
     settings:   <Admin />,
   }
 
