@@ -835,9 +835,30 @@ app.get('/api/projects/:id/members', (req, res) => {
 
 app.post('/api/projects/:id/members', (req, res) => {
   const { userId } = req.body
-  const project = db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId)
+  const project = db.prepare(`
+    SELECT p.*, ct.name AS requestor_name, c.name AS client_name
+    FROM projects p
+    LEFT JOIN contacts ct ON ct.id = p.requestor_contact_id
+    LEFT JOIN clients c   ON c.id  = p.client_id
+    WHERE p.id = ? AND p.workspace_id = ?
+  `).get(req.params.id, req.workspaceId)
   if (!project) return res.status(404).json({ error: 'Project not found' })
-  db.prepare('INSERT OR IGNORE INTO project_members (project_id, user_id) VALUES (?, ?)').run(req.params.id, userId)
+  const numUid = Number(userId)
+  db.prepare('INSERT OR IGNORE INTO project_members (project_id, user_id) VALUES (?, ?)').run(req.params.id, numUid)
+  if (numUid !== req.userId) {
+    const assignedUser = db.prepare('SELECT name, email FROM users WHERE id = ?').get(numUid)
+    if (assignedUser?.email) {
+      sendAssignmentEmail({
+        fromEmail:     req.userEmail,
+        fromName:      req.userName,
+        toEmail:       assignedUser.email,
+        toName:        assignedUser.name,
+        project:       { name: project.name, description: project.description || '', status: project.status, senderName: req.userName },
+        requestorName: project.requestor_name || null,
+        clientName:    project.client_name || null,
+      })
+    }
+  }
   res.json({ success: true })
 })
 
