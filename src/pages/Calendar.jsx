@@ -3,7 +3,9 @@ import { api } from '../api.js'
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
-function toDateKey(d) { return d.toISOString().split('T')[0] }
+function toDateKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 function monthGrid(year, month) {
   const first = new Date(year, month, 1)

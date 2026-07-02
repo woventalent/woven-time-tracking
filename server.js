@@ -1044,13 +1044,13 @@ app.get('/api/reports/by-project', (req, res) => {
   const { from, to } = req.query
   const dateFilter = from && to ? 'AND te.date BETWEEN ? AND ?' : from ? 'AND te.date >= ?' : to ? 'AND te.date <= ?' : ''
   const dateParams = from && to ? [from, to] : from ? [from] : to ? [to] : []
-  res.json(db.prepare(`
+  const rows = db.prepare(`
     SELECT p.project_code, p.name AS project_name, p.budgeted_hours,
            p.report_initiated, p.report_delivered,
            c.name AS client_name, pt.name AS type_name, pt.color AS type_color,
            COALESCE(SUM(te.hours), 0) AS total_hours,
            ROUND(COALESCE(SUM(te.hours),0) * 100.0 / NULLIF(p.budgeted_hours,0), 1) AS budget_pct,
-           GROUP_CONCAT(DISTINCT u.name) AS users_assigned
+           GROUP_CONCAT(u.name, '||') AS users_assigned
     FROM projects p
     LEFT JOIN clients c            ON c.id  = p.client_id
     LEFT JOIN project_types pt     ON pt.id = p.project_type_id
@@ -1058,7 +1058,11 @@ app.get('/api/reports/by-project', (req, res) => {
     LEFT JOIN users u              ON u.id  = te.user_id
     WHERE p.workspace_id = ?
     GROUP BY p.id ORDER BY total_hours DESC
-  `).all(...dateParams, req.workspaceId))
+  `).all(...dateParams, req.workspaceId)
+  for (const row of rows) {
+    if (row.users_assigned) row.users_assigned = [...new Set(row.users_assigned.split('||'))].join('||')
+  }
+  res.json(rows)
 })
 
 app.get('/api/reports/by-user', (req, res) => {

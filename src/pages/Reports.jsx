@@ -88,7 +88,7 @@ export default function Reports() {
         r.total_hours.toFixed(2), ...(isAdmin ? [(r.total_hours / 9).toFixed(2)] : []),
         r.report_initiated || '', r.report_delivered || '',
         businessDays(r.report_initiated, r.report_delivered) ?? '',
-        (r.users_assigned || '').replace(/,/g, '; '),
+        (r.users_assigned || '').split('||').filter(Boolean).join('; '),
       ])
       downloadCsv(`reports-by-project-${suffix}.csv`, [header, ...rows])
     } else {
@@ -155,7 +155,7 @@ export default function Reports() {
                 <tr><td colSpan={isAdmin ? 7 : 6} style={{ padding: '48px', textAlign: 'center', color: '#94a3b8' }}>No data yet</td></tr>
               ) : byProject.map((r, i) => {
                 const tat = businessDays(r.report_initiated, r.report_delivered)
-                const userNames = r.users_assigned ? r.users_assigned.split(',') : []
+                const userNames = r.users_assigned ? r.users_assigned.split('||').filter(Boolean) : []
                 return (
                   <tr key={r.project_code} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
                     <td style={{ padding: '13px 16px' }}>
