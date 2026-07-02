@@ -833,6 +833,8 @@ app.delete('/api/projects/:id', (req, res) => {
 // ── PROJECT MEMBERS ───────────────────────────────────────────────────────────
 
 app.get('/api/projects/:id/members', (req, res) => {
+  const project = db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId)
+  if (!project) return res.status(404).json({ error: 'Project not found' })
   res.json(db.prepare(`
     SELECT u.*, pm.added_at, pm.is_spoc FROM users u
     JOIN project_members pm ON pm.user_id = u.id
@@ -889,6 +891,8 @@ app.patch('/api/projects/:id/members/:userId/spoc', (req, res) => {
 // ── PROJECT DOCUMENTS ─────────────────────────────────────────────────────────
 
 app.get('/api/projects/:id/documents', (req, res) => {
+  const project = db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId)
+  if (!project) return res.status(404).json({ error: 'Project not found' })
   res.json(db.prepare(`
     SELECT pd.*, u.name AS uploader_name
     FROM project_documents pd
@@ -961,11 +965,15 @@ app.post('/api/timesheets', (req, res) => {
   const today = new Date().toISOString().split('T')[0]
   if (date > today) return res.status(400).json({ error: 'Time entries cannot be logged for future dates' })
   const parsedHours = parseFloat(hours)
-  if (isNaN(parsedHours) || parsedHours <= 0 || parsedHours > 24) {
+  if (isNaN(parsedHours) || parsedHours < 0.25 || parsedHours > 24) {
     return res.status(400).json({ error: 'Hours must be between 0.25 and 24' })
   }
   const project = db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(project_id, req.workspaceId)
   if (!project) return res.status(404).json({ error: 'Project not found' })
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') {
+    const isMember = db.prepare('SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?').get(project_id, req.userId)
+    if (!isMember) return res.status(403).json({ error: 'You are not assigned to this project' })
+  }
   const r = db.prepare(
     'INSERT INTO timesheet_entries (project_id, user_id, date, hours, description) VALUES (?, ?, ?, ?, ?)'
   ).run(project_id, req.userId, date, parsedHours, description || null)
@@ -977,8 +985,20 @@ app.put('/api/timesheets/:id', (req, res) => {
   const today = new Date().toISOString().split('T')[0]
   if (date > today) return res.status(400).json({ error: 'Time entries cannot be logged for future dates' })
   const parsedHours = parseFloat(hours)
-  if (isNaN(parsedHours) || parsedHours <= 0 || parsedHours > 24) {
+  if (isNaN(parsedHours) || parsedHours < 0.25 || parsedHours > 24) {
     return res.status(400).json({ error: 'Hours must be between 0.25 and 24' })
+  }
+  const entry = db.prepare(`
+    SELECT te.id FROM timesheet_entries te
+    JOIN projects p ON p.id = te.project_id
+    WHERE te.id = ? AND te.user_id = ? AND p.workspace_id = ?
+  `).get(req.params.id, req.userId, req.workspaceId)
+  if (!entry) return res.status(404).json({ error: 'Timesheet entry not found' })
+  const project = db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(project_id, req.workspaceId)
+  if (!project) return res.status(404).json({ error: 'Project not found' })
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') {
+    const isMember = db.prepare('SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?').get(project_id, req.userId)
+    if (!isMember) return res.status(403).json({ error: 'You are not assigned to this project' })
   }
   db.prepare('UPDATE timesheet_entries SET project_id=?, date=?, hours=?, description=? WHERE id=? AND user_id=?')
     .run(project_id, date, parsedHours, description || null, req.params.id, req.userId)
@@ -986,6 +1006,12 @@ app.put('/api/timesheets/:id', (req, res) => {
 })
 
 app.delete('/api/timesheets/:id', (req, res) => {
+  const entry = db.prepare(`
+    SELECT te.id FROM timesheet_entries te
+    JOIN projects p ON p.id = te.project_id
+    WHERE te.id = ? AND te.user_id = ? AND p.workspace_id = ?
+  `).get(req.params.id, req.userId, req.workspaceId)
+  if (!entry) return res.status(404).json({ error: 'Timesheet entry not found' })
   db.prepare('DELETE FROM timesheet_entries WHERE id = ? AND user_id = ?').run(req.params.id, req.userId)
   res.json({ success: true })
 })
