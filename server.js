@@ -12,7 +12,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const app = express()
 const PORT = process.env.PORT || 3000
 
-const APP_URL    = process.env.APP_URL || 'https://time.woventalent.in'
+const APP_URL    = process.env.APP_URL || 'https://your-production-domain.example.com'
 
 // ── Email ─────────────────────────────────────────────────────────────────────
 const SMTP_CONFIGURED = !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS)

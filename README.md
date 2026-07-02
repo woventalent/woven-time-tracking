@@ -93,10 +93,10 @@ Copy `.env.example` to `.env` and fill in:
 | `AZURE_TENANT_ID` | Azure AD tenant ID or domain (e.g. `woventalent.in`) — also used to reject SSO logins from email domains outside this tenant |
 | `AZURE_CLIENT_ID` | Azure AD application (client) ID |
 | `AZURE_CLIENT_SECRET` | Azure AD client secret value |
-| `AUTH_REDIRECT_URI` | OAuth2 callback URL (e.g. `https://time.woventalent.in/auth/callback`) |
+| `AUTH_REDIRECT_URI` | OAuth2 callback URL (e.g. `https://your-production-domain.example.com/auth/callback`) |
 | `SUPER_ADMIN_EMAIL` | Email (or comma-separated emails) granted the `super_admin` global role, which can manage all workspaces |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | SMTP credentials for project-assignment emails (used as a fallback when Microsoft SSO isn't configured); assignment emails are silently skipped if unset |
-| `APP_URL` | Public app URL, used as the link target in assignment emails (default `https://time.woventalent.in`) |
+| `APP_URL` | Public app URL, used as the link target in assignment emails (set this to your production domain) |
 | `PORT` | Port for the Express server (default `3000`) |
 | `NODE_ENV` | Set to `production` to enable secure (HTTPS-only) session cookies |
 
@@ -125,7 +125,7 @@ node_args: '--experimental-sqlite'
 Add to your Caddyfile:
 
 ```
-time.woventalent.in {
+your-production-domain.example.com {
     reverse_proxy 172.18.0.1:3001
 }
 ```

@@ -4,7 +4,7 @@
 
 - **Push directly to `main`** — no PRs needed. `main` is unprotected.
 - GitHub Actions (`deploy.yml`) deploys automatically on every push to `main` (~35s via SSH + rsync + PM2).
-- Production URL: https://time.woventalent.in
+- Production URL: not published here (this repo is public) — see the task/routine configuration or internal deployment docs for the live URL.
 
 ## Routine Workflow
 
