@@ -540,6 +540,7 @@ app.get('/api/project-types', (req, res) => {
 })
 
 app.post('/api/project-types', (req, res) => {
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
   const { name, description } = req.body
   if (!name?.trim()) return res.status(400).json({ error: 'Name is required' })
   try {
@@ -549,6 +550,7 @@ app.post('/api/project-types', (req, res) => {
 })
 
 app.put('/api/project-types/:id', (req, res) => {
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
   const { name, description, active } = req.body
   db.prepare('UPDATE project_types SET name = ?, description = ?, active = ? WHERE id = ? AND workspace_id = ?')
     .run(name, description || null, active ?? 1, req.params.id, req.workspaceId)
@@ -556,8 +558,11 @@ app.put('/api/project-types/:id', (req, res) => {
 })
 
 app.delete('/api/project-types/:id', (req, res) => {
-  db.prepare('DELETE FROM project_types WHERE id = ? AND workspace_id = ?').run(req.params.id, req.workspaceId)
-  res.json({ success: true })
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
+  try {
+    db.prepare('DELETE FROM project_types WHERE id = ? AND workspace_id = ?').run(req.params.id, req.workspaceId)
+    res.json({ success: true })
+  } catch { res.status(400).json({ error: 'Cannot delete — this type is in use by one or more projects' }) }
 })
 
 // ── CLIENTS ───────────────────────────────────────────────────────────────────
@@ -571,6 +576,7 @@ app.get('/api/clients', (req, res) => {
 })
 
 app.post('/api/clients', (req, res) => {
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
   const { name } = req.body
   if (!name?.trim()) return res.status(400).json({ error: 'Name is required' })
   try {
@@ -580,13 +586,17 @@ app.post('/api/clients', (req, res) => {
 })
 
 app.put('/api/clients/:id', (req, res) => {
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
   db.prepare('UPDATE clients SET name = ? WHERE id = ? AND workspace_id = ?').run(req.body.name, req.params.id, req.workspaceId)
   res.json({ success: true })
 })
 
 app.delete('/api/clients/:id', (req, res) => {
-  db.prepare('DELETE FROM clients WHERE id = ? AND workspace_id = ?').run(req.params.id, req.workspaceId)
-  res.json({ success: true })
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
+  try {
+    db.prepare('DELETE FROM clients WHERE id = ? AND workspace_id = ?').run(req.params.id, req.workspaceId)
+    res.json({ success: true })
+  } catch { res.status(400).json({ error: 'Cannot delete — this client is in use by one or more projects' }) }
 })
 
 // ── CONTACTS ──────────────────────────────────────────────────────────────────
@@ -599,6 +609,7 @@ app.get('/api/clients/:id/contacts', (req, res) => {
 })
 
 app.post('/api/clients/:id/contacts', (req, res) => {
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
   const { name, email, phone, role } = req.body
   if (!name?.trim())  return res.status(400).json({ error: 'Full name is required' })
   if (!email?.trim()) return res.status(400).json({ error: 'Email is required' })
@@ -612,6 +623,7 @@ app.post('/api/clients/:id/contacts', (req, res) => {
 })
 
 app.put('/api/contacts/:id', (req, res) => {
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
   const { name, email, phone, role } = req.body
   if (!name?.trim())  return res.status(400).json({ error: 'Full name is required' })
   if (!email?.trim()) return res.status(400).json({ error: 'Email is required' })
@@ -622,8 +634,11 @@ app.put('/api/contacts/:id', (req, res) => {
 })
 
 app.delete('/api/contacts/:id', (req, res) => {
-  db.prepare('DELETE FROM contacts WHERE id = ? AND workspace_id = ?').run(req.params.id, req.workspaceId)
-  res.json({ success: true })
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
+  try {
+    db.prepare('DELETE FROM contacts WHERE id = ? AND workspace_id = ?').run(req.params.id, req.workspaceId)
+    res.json({ success: true })
+  } catch { res.status(400).json({ error: 'Cannot delete — this contact is in use as a project requestor' }) }
 })
 
 // ── REQUESTORS ────────────────────────────────────────────────────────────────
@@ -633,6 +648,7 @@ app.get('/api/requestors', (req, res) => {
 })
 
 app.post('/api/requestors', (req, res) => {
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
   const { name, email } = req.body
   if (!name?.trim() || !email?.trim()) return res.status(400).json({ error: 'Name and email required' })
   try {
@@ -642,6 +658,7 @@ app.post('/api/requestors', (req, res) => {
 })
 
 app.put('/api/requestors/:id', (req, res) => {
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
   const { name, email, active } = req.body
   db.prepare('UPDATE requestors SET name = ?, email = ?, active = ? WHERE id = ? AND workspace_id = ?')
     .run(name, email, active ?? 1, req.params.id, req.workspaceId)
@@ -649,6 +666,7 @@ app.put('/api/requestors/:id', (req, res) => {
 })
 
 app.delete('/api/requestors/:id', (req, res) => {
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
   db.prepare('DELETE FROM requestors WHERE id = ? AND workspace_id = ?').run(req.params.id, req.workspaceId)
   res.json({ success: true })
 })
@@ -718,8 +736,12 @@ app.delete('/api/admin/workspaces/:id', (req, res) => {
   if (req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Super admin only' })
   const counts = db.prepare('SELECT COUNT(*) AS c FROM projects WHERE workspace_id = ?').get(req.params.id)
   if (counts.c > 0) return res.status(400).json({ error: 'Cannot delete a workspace that has projects. Archive all projects first.' })
-  db.prepare('DELETE FROM workspaces WHERE id = ?').run(req.params.id)
-  res.json({ success: true })
+  try {
+    db.prepare('DELETE FROM workspaces WHERE id = ?').run(req.params.id)
+    res.json({ success: true })
+  } catch {
+    res.status(400).json({ error: 'Cannot delete a workspace that has clients, contacts, or requestors. Remove them first.' })
+  }
 })
 
 // ── PROJECTS ──────────────────────────────────────────────────────────────────
