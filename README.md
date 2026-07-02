@@ -4,13 +4,13 @@ Internal time tracking tool for the Woven Research & Insights team. Tracks time 
 
 ## Features
 
-- **Projects** — Auto-generated project codes (WRI-001, WRI-002, …), project types with color tags, budgeted hours with usage progress bar, file attachments, and team member allocation
-- **Timesheets** — Log time against assigned projects; entries are tied to the logged-in user automatically
+- **Projects** — Auto-generated project codes (workspace-configurable prefix, e.g. WRI-001, WRI-002, …), project types with color tags, budgeted hours with usage progress bar, file attachments, and team member allocation (with a designated SPOC per project); assigned members are emailed when added to a project
+- **Timesheets** — Log time against your assigned projects only; entries are tied to the logged-in user automatically and can only be edited/deleted by their owner (or a workspace admin)
 - **Clients & Contacts** — Multi-project clients with contacts (name, email, phone required); contacts can be set as project requestors
-- **Reports** — Time by user or by project, with budget vs. logged hours visualization
-- **Workspaces** — Each team gets an isolated workspace; users can belong to multiple workspaces
-- **Settings (Admin)** — Manage project types, workspace users/roles, and clients & contacts
-- **Microsoft SSO** — Azure AD OAuth2 login; dev-login fallback when credentials are not configured
+- **Reports** — Time by user, project, or client, with budget vs. logged hours visualization, CSV export, and a report delivery calendar view showing delivered/upcoming report dates
+- **Workspaces** — Each team gets an isolated workspace; users can belong to multiple workspaces; any authenticated user can create a new workspace (becoming its admin), and each page has its own URL route
+- **Settings (Admin)** — Workspace admins manage project types, workspace users/roles, and clients & contacts; a super admin (configured via `SUPER_ADMIN_EMAIL`) can additionally manage all workspaces org-wide
+- **Microsoft SSO** — Azure AD OAuth2 login restricted to the configured tenant domain; dev-login fallback when credentials are not configured
 
 ## Tech Stack
 
@@ -52,7 +52,7 @@ Edit `.env` with your values (see [Environment Variables](#environment-variables
 npm run dev
 ```
 
-Backend runs on `http://localhost:3000`, Vite dev server on `http://localhost:5173` (proxies `/api` to the backend automatically).
+Backend runs on `http://localhost:3000`, Vite dev server on `http://localhost:5173` (proxies `/api` and `/auth` to the backend automatically).
 
 When `AZURE_CLIENT_ID` is not set, a dev-login form is shown instead of Microsoft SSO — no Azure credentials needed for local development.
 
@@ -90,12 +90,15 @@ Copy `.env.example` to `.env` and fill in:
 
 | Variable | Description |
 |---|---|
-| `SESSION_SECRET` | Random secret for signing session cookies |
-| `AZURE_TENANT_ID` | Azure AD tenant ID or domain (e.g. `woventalent.in`) |
+| `AZURE_TENANT_ID` | Azure AD tenant ID or domain (e.g. `woventalent.in`) — also used to reject SSO logins from email domains outside this tenant |
 | `AZURE_CLIENT_ID` | Azure AD application (client) ID |
 | `AZURE_CLIENT_SECRET` | Azure AD client secret value |
-| `AZURE_REDIRECT_URI` | OAuth2 callback URL (e.g. `https://time.woventalent.in/auth/callback`) |
+| `AUTH_REDIRECT_URI` | OAuth2 callback URL (e.g. `https://time.woventalent.in/auth/callback`) |
+| `SUPER_ADMIN_EMAIL` | Email (or comma-separated emails) granted the `super_admin` global role, which can manage all workspaces |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | SMTP credentials for project-assignment emails (used as a fallback when Microsoft SSO isn't configured); assignment emails are silently skipped if unset |
+| `APP_URL` | Public app URL, used as the link target in assignment emails (default `https://time.woventalent.in`) |
 | `PORT` | Port for the Express server (default `3000`) |
+| `NODE_ENV` | Set to `production` to enable secure (HTTPS-only) session cookies |
 
 If `AZURE_CLIENT_ID` is not set, the app falls back to a dev-login form.
 
@@ -150,13 +153,17 @@ Reload Caddy after editing the Caddyfile.
 ├── src/
 │   ├── contexts/
 │   │   └── AuthContext.jsx   # Auth state (user, workspace, MSAuth)
+│   ├── components/
+│   │   ├── Sidebar.jsx
+│   │   └── Modal.jsx
 │   ├── pages/
 │   │   ├── Login.jsx
 │   │   ├── WorkspaceSelect.jsx
 │   │   ├── Projects.jsx
 │   │   ├── Timesheets.jsx
 │   │   ├── Reports.jsx
-│   │   └── Admin.jsx         # Settings page (project types, users, clients)
+│   │   ├── Calendar.jsx      # Report delivery calendar view
+│   │   └── Admin.jsx         # Settings page (project types, users, clients, and — for super admins — all workspaces)
 │   └── main.jsx
 ├── index.html
 ├── vite.config.js
