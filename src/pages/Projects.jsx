@@ -405,6 +405,7 @@ function ProjectDetail({ project, isAdmin, onClose, onProjectUpdate }) {
   const [members,   setMembers]   = useState([])
   const [wsUsers,   setWsUsers]   = useState([])
   const [documents, setDocs]      = useState([])
+  const [entries,   setEntries]   = useState([])
   const [addUserId, setAddUser]   = useState('')
   const [uploading, setUploading] = useState(false)
   const [docDesc,   setDocDesc]   = useState('')
@@ -412,10 +413,12 @@ function ProjectDetail({ project, isAdmin, onClose, onProjectUpdate }) {
 
   const loadMembers = () => api.get('/projects/' + project.id + '/members').then(setMembers)
   const loadDocs    = () => api.get('/projects/' + project.id + '/documents').then(setDocs)
+  const loadEntries = () => api.get('/timesheets?project_id=' + project.id + '&all=true').then(setEntries)
 
   useEffect(() => {
     loadMembers()
     loadDocs()
+    loadEntries()
     api.get('/workspace-users').then(setWsUsers)
   }, [project.id])
 
@@ -516,6 +519,7 @@ function ProjectDetail({ project, isAdmin, onClose, onProjectUpdate }) {
         {/* Tabs */}
         <div style={{ display: 'flex', borderBottom: '1px solid #e2e8f0', paddingLeft: 8 }}>
           <button style={tabBtn(tab === 'members')}   onClick={() => setTab('members')}>Members</button>
+          <button style={tabBtn(tab === 'timesheets')} onClick={() => setTab('timesheets')}>Timesheets ({entries.length})</button>
           <button style={tabBtn(tab === 'documents')} onClick={() => setTab('documents')}>Documents ({documents.length})</button>
         </div>
 
@@ -565,6 +569,31 @@ function ProjectDetail({ project, isAdmin, onClose, onProjectUpdate }) {
                         <button onClick={() => removeMember(m.id)}
                           style={{ border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
                       </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === 'timesheets' && (
+            <div>
+              {entries.length === 0 ? (
+                <p style={{ color: '#94a3b8', fontSize: 13 }}>No timesheet entries logged against this project yet.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {entries.map(e => (
+                    <div key={e.id} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '10px 14px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{e.user_name || 'Unknown user'}</span>
+                          <span style={{ fontSize: 11, color: '#94a3b8' }}>
+                            {new Date(e.date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </span>
+                        </div>
+                        {e.description && <div style={{ fontSize: 12, color: '#64748b', marginTop: 3 }}>{e.description}</div>}
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', marginLeft: 10 }}>{(+e.hours).toFixed(2)}h</span>
                     </div>
                   ))}
                 </div>
