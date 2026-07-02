@@ -517,6 +517,50 @@ app.post('/api/admin/workspaces', (req, res) => {
   } catch { res.status(400).json({ error: 'Workspace name or slug already exists' }) }
 })
 
+// Super admins manage workspaces globally, so these routes must work even before
+// the caller has selected (or joined) any workspace — registered ahead of the
+// workspace-membership guard below for that reason, same as workspace creation.
+function requireSuperAdminSession(req, res) {
+  const s = getSession(req.cookies?.wtt_session)
+  if (!s) { res.status(401).json({ error: 'Not authenticated' }); return null }
+  if (s.user_global_role !== 'super_admin') { res.status(403).json({ error: 'Super admin only' }); return null }
+  return s
+}
+
+app.get('/api/admin/workspaces', (req, res) => {
+  if (!requireSuperAdminSession(req, res)) return
+  res.json(db.prepare(`
+    SELECT w.*,
+      COUNT(DISTINCT wm.user_id) AS member_count,
+      COUNT(DISTINCT p.id)       AS project_count
+    FROM workspaces w
+    LEFT JOIN workspace_members wm ON wm.workspace_id = w.id
+    LEFT JOIN projects p           ON p.workspace_id  = w.id
+    GROUP BY w.id ORDER BY w.name
+  `).all())
+})
+
+app.put('/api/admin/workspaces/:id', (req, res) => {
+  if (!requireSuperAdminSession(req, res)) return
+  const { name, code_prefix } = req.body
+  if (!name?.trim()) return res.status(400).json({ error: 'Workspace name is required' })
+  const prefix = (code_prefix || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
+  db.prepare('UPDATE workspaces SET name = ?, code_prefix = ? WHERE id = ?').run(name.trim(), prefix || 'WRI', req.params.id)
+  res.json({ success: true })
+})
+
+app.delete('/api/admin/workspaces/:id', (req, res) => {
+  if (!requireSuperAdminSession(req, res)) return
+  const counts = db.prepare('SELECT COUNT(*) AS c FROM projects WHERE workspace_id = ?').get(req.params.id)
+  if (counts.c > 0) return res.status(400).json({ error: 'Cannot delete a workspace that has projects. Archive all projects first.' })
+  try {
+    db.prepare('DELETE FROM workspaces WHERE id = ?').run(req.params.id)
+    res.json({ success: true })
+  } catch {
+    res.status(400).json({ error: 'Cannot delete a workspace that has clients, contacts, or requestors. Remove them first.' })
+  }
+})
+
 // ── Auth guard ────────────────────────────────────────────────────────────────
 app.use('/api', (req, res, next) => {
   const s = getSession(req.cookies?.wtt_session)
@@ -706,42 +750,6 @@ app.delete('/api/workspace-users/:userId', (req, res) => {
   if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
   db.prepare('DELETE FROM workspace_members WHERE user_id = ? AND workspace_id = ?').run(req.params.userId, req.workspaceId)
   res.json({ success: true })
-})
-
-// ── ADMIN: Workspace management (super_admin only) ────────────────────────────
-
-app.get('/api/admin/workspaces', (req, res) => {
-  if (req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Super admin only' })
-  res.json(db.prepare(`
-    SELECT w.*,
-      COUNT(DISTINCT wm.user_id) AS member_count,
-      COUNT(DISTINCT p.id)       AS project_count
-    FROM workspaces w
-    LEFT JOIN workspace_members wm ON wm.workspace_id = w.id
-    LEFT JOIN projects p           ON p.workspace_id  = w.id
-    GROUP BY w.id ORDER BY w.name
-  `).all())
-})
-
-app.put('/api/admin/workspaces/:id', (req, res) => {
-  if (req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Super admin only' })
-  const { name, code_prefix } = req.body
-  if (!name?.trim()) return res.status(400).json({ error: 'Workspace name is required' })
-  const prefix = (code_prefix || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
-  db.prepare('UPDATE workspaces SET name = ?, code_prefix = ? WHERE id = ?').run(name.trim(), prefix || 'WRI', req.params.id)
-  res.json({ success: true })
-})
-
-app.delete('/api/admin/workspaces/:id', (req, res) => {
-  if (req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Super admin only' })
-  const counts = db.prepare('SELECT COUNT(*) AS c FROM projects WHERE workspace_id = ?').get(req.params.id)
-  if (counts.c > 0) return res.status(400).json({ error: 'Cannot delete a workspace that has projects. Archive all projects first.' })
-  try {
-    db.prepare('DELETE FROM workspaces WHERE id = ?').run(req.params.id)
-    res.json({ success: true })
-  } catch {
-    res.status(400).json({ error: 'Cannot delete a workspace that has clients, contacts, or requestors. Remove them first.' })
-  }
 })
 
 // ── PROJECTS ──────────────────────────────────────────────────────────────────
