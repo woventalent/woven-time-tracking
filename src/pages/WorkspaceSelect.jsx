@@ -3,9 +3,12 @@ import { useAuth } from '../contexts/AuthContext.jsx'
 import Modal from '../components/Modal.jsx'
 
 export default function WorkspaceSelect() {
-  const { user, selectWorkspace } = useAuth()
+  const { user, selectWorkspace, refresh } = useAuth()
   const [workspaces, setWorkspaces] = useState([])
+  const [joinable, setJoinable] = useState([])
   const [loading, setLoading] = useState(false)
+  const [joiningId, setJoiningId] = useState(null)
+  const [joinError, setJoinError] = useState('')
   const [showNewWs, setShowNewWs] = useState(false)
   const [newWsForm, setNewWsForm] = useState({ name: '', code_prefix: '' })
   const [newWsError, setNewWsError] = useState('')
@@ -13,12 +16,27 @@ export default function WorkspaceSelect() {
 
   useEffect(() => {
     fetch('/api/auth/workspaces').then(r => r.json()).then(setWorkspaces)
+    fetch('/api/auth/joinable-workspaces').then(r => r.json()).then(setJoinable)
   }, [])
 
   async function choose(id) {
     setLoading(true)
     await selectWorkspace(id)
     setLoading(false)
+  }
+
+  async function join(id) {
+    setJoinError('')
+    setJoiningId(id)
+    try {
+      const r = await fetch('/api/auth/join-workspace', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspaceId: id }),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error)
+      await refresh()
+    } catch (err) { setJoinError(err.message) }
+    finally { setJoiningId(null) }
   }
 
   function openNewWs() {
@@ -87,12 +105,50 @@ export default function WorkspaceSelect() {
             </button>
           ))}
 
-          {workspaces.length === 0 && (
+          {workspaces.length === 0 && joinable.length === 0 && (
             <div style={{ textAlign: 'center', color: '#94a3b8', padding: '12px 0 4px', fontSize: 14 }}>
               You haven't been added to any workspace yet.<br />
               Contact your administrator, or create your own below.
             </div>
           )}
+
+          {joinable.length > 0 && (
+            <>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: workspaces.length > 0 ? 8 : 0 }}>
+                Workspaces at your organization
+              </div>
+              {joinable.map(ws => (
+                <div key={ws.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 14, padding: '16px 18px',
+                  border: '2px solid #e2e8f0', borderRadius: 10, background: '#fff',
+                }}>
+                  <div style={{
+                    width: 38, height: 38, borderRadius: 8,
+                    background: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 16, fontWeight: 700, color: '#2563eb', flexShrink: 0,
+                  }}>
+                    {ws.name.charAt(0)}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 15 }}>{ws.name}</div>
+                    <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 1 }}>{ws.member_count} member{ws.member_count !== 1 ? 's' : ''}</div>
+                  </div>
+                  <button
+                    onClick={() => join(ws.id)}
+                    disabled={joiningId === ws.id}
+                    style={{
+                      padding: '8px 14px', border: 'none', borderRadius: 7,
+                      background: '#2563eb', color: '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer',
+                    }}
+                  >
+                    {joiningId === ws.id ? 'Joining…' : 'Join'}
+                  </button>
+                </div>
+              ))}
+            </>
+          )}
+
+          {joinError && <div style={{ color: '#ef4444', fontSize: 13, padding: '8px 12px', background: '#fef2f2', borderRadius: 6 }}>{joinError}</div>}
 
           <button
             onClick={openNewWs}

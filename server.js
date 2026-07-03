@@ -500,6 +500,44 @@ app.get('/api/auth/workspaces', (req, res) => {
   res.json(getUserWorkspaces(s.user_id))
 })
 
+// Workspaces the user isn't a member of yet, but that already have at least one
+// member sharing their email domain — lets a new sign-up join their org's existing
+// workspace instead of only being able to create a new one.
+app.get('/api/auth/joinable-workspaces', (req, res) => {
+  const s = getSession(req.cookies?.wtt_session)
+  if (!s) return res.status(401).json({ error: 'Not authenticated' })
+  const domain = (s.user_email || '').split('@')[1]?.toLowerCase()
+  if (!domain) return res.json([])
+  const rows = db.prepare(`
+    SELECT DISTINCT w.id, w.name, w.slug, w.code_prefix,
+      (SELECT COUNT(*) FROM workspace_members wm2 WHERE wm2.workspace_id = w.id) AS member_count
+    FROM workspaces w
+    JOIN workspace_members wm ON wm.workspace_id = w.id
+    JOIN users u              ON u.id = wm.user_id
+    WHERE LOWER(SUBSTR(u.email, INSTR(u.email, '@') + 1)) = ?
+      AND w.id NOT IN (SELECT workspace_id FROM workspace_members WHERE user_id = ?)
+    ORDER BY w.name
+  `).all(domain, s.user_id)
+  res.json(rows)
+})
+
+app.post('/api/auth/join-workspace', (req, res) => {
+  const s = getSession(req.cookies?.wtt_session)
+  if (!s) return res.status(401).json({ error: 'Not authenticated' })
+  const { workspaceId } = req.body
+  const domain = (s.user_email || '').split('@')[1]?.toLowerCase()
+  if (!domain) return res.status(400).json({ error: 'Could not determine your email domain' })
+  const match = db.prepare(`
+    SELECT 1 FROM workspace_members wm
+    JOIN users u ON u.id = wm.user_id
+    WHERE wm.workspace_id = ? AND LOWER(SUBSTR(u.email, INSTR(u.email, '@') + 1)) = ?
+  `).get(workspaceId, domain)
+  if (!match) return res.status(403).json({ error: 'This workspace is not open to your email domain' })
+  ensureWorkspaceMember(s.user_id, workspaceId, 'member')
+  db.prepare('UPDATE sessions SET workspace_id = ? WHERE id = ?').run(workspaceId, s.id)
+  res.json({ ok: true })
+})
+
 // Any authenticated user can create a workspace, even before joining one —
 // registered ahead of the workspace-membership guard below for that reason.
 app.post('/api/admin/workspaces', (req, res) => {
