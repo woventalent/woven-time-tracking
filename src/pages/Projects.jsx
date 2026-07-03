@@ -50,12 +50,14 @@ export default function Projects({ onLogTime }) {
   const [detailProject, setDetail]    = useState(null)
   const [sortBy,        setSortBy]    = useState('request_date')
   const [sortDir,       setSortDir]   = useState('desc')
+  const [myProjectIds,  setMyIds]     = useState(new Set())
 
   const loadAll = () => Promise.all([
     api.get('/projects').then(setProjects),
     api.get('/clients').then(setClients),
     api.get('/project-types').then(r => setTypes(r.filter(x => x.active))),
     api.get('/workspace-users').then(setWsUsers),
+    api.get('/projects?assigned=true').then(ps => setMyIds(new Set(ps.map(p => p.id)))),
   ])
 
   useEffect(() => { loadAll() }, [])
@@ -69,6 +71,12 @@ export default function Projects({ onLogTime }) {
     await api.delete('/projects/' + p.id)
     setProjects(ps => ps.filter(x => x.id !== p.id))
     if (detailProject?.id === p.id) setDetail(null)
+  }
+
+  async function handleStatusChange(p, status) {
+    await api.patch('/projects/' + p.id + '/status', { status })
+    setProjects(ps => ps.map(x => x.id === p.id ? { ...x, status } : x))
+    if (detailProject?.id === p.id) setDetail(d => ({ ...d, status }))
   }
 
   async function handleSave(form) {
@@ -206,10 +214,23 @@ export default function Projects({ onLogTime }) {
                       <CreditsDisplay hours={p.total_hours} />
                     </td>
                   )}
-                  <td style={{ padding: '13px 16px' }}>
-                    <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: sc.bg, color: sc.fg }}>
-                      {p.status.replace('_', ' ')}
-                    </span>
+                  <td style={{ padding: '13px 16px' }} onClick={e => e.stopPropagation()}>
+                    {isAdmin || myProjectIds.has(p.id) ? (
+                      <select
+                        value={p.status}
+                        onChange={e => handleStatusChange(p, e.target.value)}
+                        style={{ padding: '3px 8px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: sc.bg, color: sc.fg, border: 'none', cursor: 'pointer' }}
+                      >
+                        <option value="active">active</option>
+                        <option value="completed">completed</option>
+                        <option value="on_hold">on hold</option>
+                        <option value="cancelled">cancelled</option>
+                      </select>
+                    ) : (
+                      <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: sc.bg, color: sc.fg }}>
+                        {p.status.replace('_', ' ')}
+                      </span>
+                    )}
                   </td>
                   <td style={{ padding: '13px 16px', color: '#475569', whiteSpace: 'nowrap' }}>
                     {p.report_initiated ? new Date(p.report_initiated + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : <span style={{ color: '#cbd5e1' }}>—</span>}

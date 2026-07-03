@@ -840,6 +840,7 @@ app.post('/api/projects', async (req, res) => {
 })
 
 app.put('/api/projects/:id', (req, res) => {
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Admin only' })
   const { name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours, status, report_initiated, report_delivered, description } = req.body
   if (budgeted_hours !== undefined && budgeted_hours !== null && budgeted_hours !== '') {
     const bh = Number(budgeted_hours)
@@ -848,6 +849,20 @@ app.put('/api/projects/:id', (req, res) => {
   db.prepare(
     'UPDATE projects SET name=?, project_type_id=?, request_date=?, requestor_contact_id=?, client_id=?, budgeted_hours=?, status=?, report_initiated=?, report_delivered=?, description=? WHERE id=? AND workspace_id=?'
   ).run(name, project_type_id || null, request_date || null, requestor_contact_id || null, client_id || null, budgeted_hours || null, status || 'active', report_initiated || null, report_delivered || null, description || null, req.params.id, req.workspaceId)
+  res.json({ success: true })
+})
+
+app.patch('/api/projects/:id/status', (req, res) => {
+  const { status } = req.body
+  const VALID_STATUSES = ['active', 'completed', 'on_hold', 'cancelled']
+  if (!VALID_STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' })
+  const project = db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId)
+  if (!project) return res.status(404).json({ error: 'Project not found' })
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') {
+    const isMember = db.prepare('SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?').get(req.params.id, req.userId)
+    if (!isMember) return res.status(403).json({ error: 'You are not assigned to this project' })
+  }
+  db.prepare('UPDATE projects SET status = ? WHERE id = ? AND workspace_id = ?').run(status, req.params.id, req.workspaceId)
   res.json({ success: true })
 })
 
