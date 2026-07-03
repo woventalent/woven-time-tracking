@@ -776,7 +776,9 @@ app.get('/api/projects', (req, res) => {
       COALESCE(SUM(te.hours), 0)          AS total_hours,
       COUNT(DISTINCT te.id)               AS entry_count,
       COUNT(DISTINCT pm.user_id)          AS member_count,
-      ROUND(COALESCE(SUM(te.hours),0) * 100.0 / NULLIF(p.budgeted_hours,0), 1) AS budget_pct
+      ROUND(COALESCE(SUM(te.hours),0) * 100.0 / NULLIF(p.budgeted_hours,0), 1) AS budget_pct,
+      (SELECT GROUP_CONCAT(mu.name, '||') FROM project_members pm2
+         JOIN users mu ON mu.id = pm2.user_id WHERE pm2.project_id = p.id) AS users_assigned
     FROM projects p
     LEFT JOIN project_types pt        ON pt.id  = p.project_type_id
     LEFT JOIN contacts ct             ON ct.id  = p.requestor_contact_id
@@ -1085,18 +1087,15 @@ app.get('/api/reports/by-project', (req, res) => {
            c.name AS client_name, pt.name AS type_name, pt.color AS type_color,
            COALESCE(SUM(te.hours), 0) AS total_hours,
            ROUND(COALESCE(SUM(te.hours),0) * 100.0 / NULLIF(p.budgeted_hours,0), 1) AS budget_pct,
-           GROUP_CONCAT(u.name, '||') AS users_assigned
+           (SELECT GROUP_CONCAT(mu.name, '||') FROM project_members pm
+              JOIN users mu ON mu.id = pm.user_id WHERE pm.project_id = p.id) AS users_assigned
     FROM projects p
     LEFT JOIN clients c            ON c.id  = p.client_id
     LEFT JOIN project_types pt     ON pt.id = p.project_type_id
     LEFT JOIN timesheet_entries te ON te.project_id = p.id ${dateFilter}
-    LEFT JOIN users u              ON u.id  = te.user_id
     WHERE p.workspace_id = ?
     GROUP BY p.id ORDER BY total_hours DESC
   `).all(...dateParams, req.workspaceId)
-  for (const row of rows) {
-    if (row.users_assigned) row.users_assigned = [...new Set(row.users_assigned.split('||'))].join('||')
-  }
   res.json(rows)
 })
 

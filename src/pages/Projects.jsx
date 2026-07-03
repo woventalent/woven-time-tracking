@@ -125,6 +125,26 @@ export default function Projects({ onLogTime }) {
     return sortDir === 'asc' ? cmp : -cmp
   })
 
+  function exportCsv() {
+    const escape = v => {
+      const s = (v == null ? '' : String(v))
+      return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
+    }
+    const header = ['Code', 'Project Name', 'Type', 'Request Date', 'Client', 'Requestor', 'Credits', 'Users Assigned', 'Status', 'Report Initiated', 'Report Delivered']
+    const rows = sorted.map(p => [
+      p.project_code, p.name, p.type_name || '', p.request_date || '', p.client_name || '', p.requestor_name || '',
+      ((+p.total_hours || 0) / 9).toFixed(2),
+      [...new Set((p.users_assigned || '').split('||').filter(Boolean))].join('; '),
+      p.status.replace('_', ' '), p.report_initiated || '', p.report_delivered || '',
+    ])
+    const csv = [header, ...rows].map(r => r.map(escape).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url
+    a.download = 'projects.csv'
+    a.click(); URL.revokeObjectURL(url)
+  }
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28 }}>
@@ -136,11 +156,19 @@ export default function Projects({ onLogTime }) {
           </p>
         </div>
         {isAdmin && (
-          <button onClick={openNew} style={{
-            background: '#2563eb', color: '#fff', border: 'none',
-            padding: '10px 18px', borderRadius: 8, fontSize: 14, fontWeight: 600,
-            boxShadow: '0 1px 4px rgba(37,99,235,0.3)', cursor: 'pointer',
-          }}>+ New Project</button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {projects.length > 0 && (
+              <button onClick={exportCsv} style={{
+                background: '#fff', color: '#16a34a', border: '1px solid #16a34a',
+                padding: '10px 14px', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer',
+              }}>↓ Export CSV</button>
+            )}
+            <button onClick={openNew} style={{
+              background: '#2563eb', color: '#fff', border: 'none',
+              padding: '10px 18px', borderRadius: 8, fontSize: 14, fontWeight: 600,
+              boxShadow: '0 1px 4px rgba(37,99,235,0.3)', cursor: 'pointer',
+            }}>+ New Project</button>
+          </div>
         )}
       </div>
 
@@ -156,7 +184,7 @@ export default function Projects({ onLogTime }) {
         <table style={{ width: '100%', minWidth: 1000, borderCollapse: 'collapse', fontSize: 13.5 }}>
           <thead>
             <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-              {['Code', 'Project Name', 'Type', 'Request Date', 'Client', 'Requestor', ...(isAdmin ? ['Credits'] : []), 'Status', 'Report Initiated', 'Report Delivered', ''].map(h => {
+              {['Code', 'Project Name', 'Type', 'Request Date', 'Client', 'Requestor', ...(isAdmin ? ['Credits'] : []), 'Users Assigned', 'Status', 'Report Initiated', 'Report Delivered', ''].map(h => {
                 const col = Object.keys(SORTABLE_COLUMNS).find(k => SORTABLE_COLUMNS[k] === h)
                 return (
                   <th key={h} onClick={col ? () => toggleSort(col) : undefined}
@@ -175,7 +203,7 @@ export default function Projects({ onLogTime }) {
           <tbody>
             {sorted.length === 0 ? (
               <tr>
-                <td colSpan={9} style={{ padding: '48px 16px', textAlign: 'center', color: '#94a3b8' }}>
+                <td colSpan={11} style={{ padding: '48px 16px', textAlign: 'center', color: '#94a3b8' }}>
                   {search ? 'No projects match your search' : 'No projects yet — create one to get started'}
                 </td>
               </tr>
@@ -214,6 +242,15 @@ export default function Projects({ onLogTime }) {
                       <CreditsDisplay hours={p.total_hours} />
                     </td>
                   )}
+                  <td style={{ padding: '13px 16px', maxWidth: 180 }}>
+                    {p.users_assigned
+                      ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          {[...new Set(p.users_assigned.split('||').filter(Boolean))].map(n => (
+                            <span key={n} style={{ background: '#f1f5f9', color: '#475569', fontSize: 11, padding: '2px 7px', borderRadius: 10, whiteSpace: 'nowrap' }}>{n.trim()}</span>
+                          ))}
+                        </div>
+                      : <span style={{ color: '#cbd5e1' }}>—</span>}
+                  </td>
                   <td style={{ padding: '13px 16px' }} onClick={e => e.stopPropagation()}>
                     {isAdmin || myProjectIds.has(p.id) ? (
                       <select
