@@ -48,6 +48,8 @@ export default function Projects({ onLogTime }) {
   const [showModal,     setShowModal] = useState(false)
   const [editing,       setEditing]   = useState(null)
   const [detailProject, setDetail]    = useState(null)
+  const [sortBy,        setSortBy]    = useState('request_date')
+  const [sortDir,       setSortDir]   = useState('desc')
 
   const loadAll = () => Promise.all([
     api.get('/projects').then(setProjects),
@@ -94,6 +96,27 @@ export default function Projects({ onLogTime }) {
       (p.requestor_name || '').toLowerCase().includes(q)
   })
 
+  const SORTABLE_COLUMNS = { request_date: 'Request Date', report_initiated: 'Report Initiated', report_delivered: 'Report Delivered' }
+
+  function toggleSort(col) {
+    if (sortBy === col) {
+      setSortDir(d => d === 'desc' ? 'asc' : 'desc')
+    } else {
+      setSortBy(col)
+      setSortDir('desc')
+    }
+  }
+
+  const sorted = [...filtered].sort((a, b) => {
+    const av = a[sortBy], bv = b[sortBy]
+    if (!av && !bv) return 0
+    if (!av) return 1
+    if (!bv) return -1
+    if (av === bv) return 0
+    const cmp = av < bv ? -1 : 1
+    return sortDir === 'asc' ? cmp : -cmp
+  })
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28 }}>
@@ -125,19 +148,30 @@ export default function Projects({ onLogTime }) {
         <table style={{ width: '100%', minWidth: 1000, borderCollapse: 'collapse', fontSize: 13.5 }}>
           <thead>
             <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-              {['Code', 'Project Name', 'Type', 'Request Date', 'Client', 'Requestor', ...(isAdmin ? ['Credits'] : []), 'Status', 'Report Initiated', 'Report Delivered', ''].map(h => (
-                <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>{h}</th>
-              ))}
+              {['Code', 'Project Name', 'Type', 'Request Date', 'Client', 'Requestor', ...(isAdmin ? ['Credits'] : []), 'Status', 'Report Initiated', 'Report Delivered', ''].map(h => {
+                const col = Object.keys(SORTABLE_COLUMNS).find(k => SORTABLE_COLUMNS[k] === h)
+                return (
+                  <th key={h} onClick={col ? () => toggleSort(col) : undefined}
+                    style={{ padding: '11px 16px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap', cursor: col ? 'pointer' : 'default', userSelect: 'none' }}>
+                    {h}
+                    {col && (
+                      <span style={{ marginLeft: 4, color: sortBy === col ? '#2563eb' : '#cbd5e1', fontSize: 10 }}>
+                        {sortBy === col ? (sortDir === 'asc' ? '▲' : '▼') : '▲▼'}
+                      </span>
+                    )}
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {sorted.length === 0 ? (
               <tr>
                 <td colSpan={9} style={{ padding: '48px 16px', textAlign: 'center', color: '#94a3b8' }}>
                   {search ? 'No projects match your search' : 'No projects yet — create one to get started'}
                 </td>
               </tr>
-            ) : filtered.map((p, i) => {
+            ) : sorted.map((p, i) => {
               const sc = STATUS_COLORS[p.status] || STATUS_COLORS.active
               return (
                 <tr
@@ -163,12 +197,9 @@ export default function Projects({ onLogTime }) {
                   </td>
                   <td style={{ padding: '13px 16px', color: '#475569' }}>{p.client_name || <span style={{ color: '#cbd5e1' }}>—</span>}</td>
                   <td style={{ padding: '13px 16px' }}>
-                    {p.requestor_name ? (
-                      <>
-                        <div style={{ color: '#1e293b', fontWeight: 500 }}>{p.requestor_name}</div>
-                        <div style={{ color: '#94a3b8', fontSize: 12 }}>{p.requestor_email}</div>
-                      </>
-                    ) : <span style={{ color: '#cbd5e1' }}>—</span>}
+                    {p.requestor_name
+                      ? <div style={{ color: '#1e293b', fontWeight: 500 }}>{p.requestor_name}</div>
+                      : <span style={{ color: '#cbd5e1' }}>—</span>}
                   </td>
                   {isAdmin && (
                     <td style={{ padding: '13px 16px' }}>
