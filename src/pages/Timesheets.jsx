@@ -21,10 +21,14 @@ function Field({ label, required, children }) {
 
 function today() { return new Date().toISOString().split('T')[0] }
 
+function notYetStarted(project) {
+  return !!(project?.report_initiated && project.report_initiated > today())
+}
+
 function defaultDateFor(project) {
   if (!project) return today()
+  if (notYetStarted(project)) return project.report_initiated
   let d = project.report_initiated || today()
-  if (d > today()) d = today()
   if (project.report_delivered && d > project.report_delivered) d = project.report_delivered
   return d
 }
@@ -277,6 +281,7 @@ export default function Timesheets({ initialProjectId }) {
         const selectedProject = projects.find(p => String(p.id) === form.project_id)
         const minDate = selectedProject?.report_initiated || undefined
         const maxDate = selectedProject?.report_delivered && selectedProject.report_delivered < today() ? selectedProject.report_delivered : today()
+        const blockedByStartDate = !editing && notYetStarted(selectedProject)
         return (
           <Modal title={editing ? 'Edit Time Entry' : 'Log Time'} onClose={() => setShowModal(false)} width={520}>
             <form onSubmit={submit}>
@@ -299,10 +304,15 @@ export default function Timesheets({ initialProjectId }) {
                 {filteredProjects.length === 0 && (
                   <p style={{ fontSize: 12, color: '#f59e0b', marginTop: 4 }}>You have no projects assigned. Ask an admin to allocate you to a project.</p>
                 )}
+                {blockedByStartDate && (
+                  <p style={{ fontSize: 12, color: '#f59e0b', marginTop: 4 }}>
+                    This project's Report Initiated date ({new Date(selectedProject.report_initiated + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}) hasn't arrived yet — time can't be logged until then.
+                  </p>
+                )}
               </Field>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <Field label="Date" required>
-                  <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={iStyle} required min={minDate} max={maxDate} />
+                  <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={iStyle} required min={minDate} max={maxDate} disabled={blockedByStartDate} />
                 </Field>
                 <Field label="Hours" required>
                   <input
@@ -322,7 +332,7 @@ export default function Timesheets({ initialProjectId }) {
               {error && <div style={{ color: '#ef4444', fontSize: 13, marginBottom: 12, padding: '8px 12px', background: '#fef2f2', borderRadius: 6 }}>{error}</div>}
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
                 <button type="button" onClick={() => setShowModal(false)} style={{ padding: '9px 16px', border: '1px solid #e2e8f0', background: '#fff', borderRadius: 7, fontSize: 13.5, cursor: 'pointer' }}>Cancel</button>
-                <button type="submit" disabled={saving} style={{ padding: '9px 18px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>
+                <button type="submit" disabled={saving || blockedByStartDate} style={{ padding: '9px 18px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>
                   {saving ? 'Saving…' : editing ? 'Save Changes' : 'Log Time'}
                 </button>
               </div>

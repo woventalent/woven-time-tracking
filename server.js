@@ -500,14 +500,23 @@ app.get('/api/auth/workspaces', (req, res) => {
   res.json(getUserWorkspaces(s.user_id))
 })
 
+// Free/public email providers are excluded from domain-based workspace auto-join —
+// matching on these would let any stranger with an account there join a workspace
+// that happens to have one member on the same provider.
+const PUBLIC_EMAIL_DOMAINS = new Set([
+  'gmail.com', 'googlemail.com', 'yahoo.com', 'ymail.com', 'outlook.com', 'hotmail.com',
+  'live.com', 'msn.com', 'icloud.com', 'me.com', 'mac.com', 'aol.com', 'protonmail.com',
+  'proton.me', 'mail.com', 'gmx.com', 'zoho.com', 'yandex.com',
+])
+
 // Workspaces the user isn't a member of yet, but that already have at least one
-// member sharing their email domain — lets a new sign-up join their org's existing
-// workspace instead of only being able to create a new one.
+// member sharing their (non-public) email domain — lets a new sign-up join their
+// org's existing workspace instead of only being able to create a new one.
 app.get('/api/auth/joinable-workspaces', (req, res) => {
   const s = getSession(req.cookies?.wtt_session)
   if (!s) return res.status(401).json({ error: 'Not authenticated' })
   const domain = (s.user_email || '').split('@')[1]?.toLowerCase()
-  if (!domain) return res.json([])
+  if (!domain || PUBLIC_EMAIL_DOMAINS.has(domain)) return res.json([])
   const rows = db.prepare(`
     SELECT DISTINCT w.id, w.name, w.slug, w.code_prefix,
       (SELECT COUNT(*) FROM workspace_members wm2 WHERE wm2.workspace_id = w.id) AS member_count
@@ -527,6 +536,7 @@ app.post('/api/auth/join-workspace', (req, res) => {
   const { workspaceId } = req.body
   const domain = (s.user_email || '').split('@')[1]?.toLowerCase()
   if (!domain) return res.status(400).json({ error: 'Could not determine your email domain' })
+  if (PUBLIC_EMAIL_DOMAINS.has(domain)) return res.status(403).json({ error: 'Workspace auto-join is not available for public email domains' })
   const match = db.prepare(`
     SELECT 1 FROM workspace_members wm
     JOIN users u ON u.id = wm.user_id
@@ -809,7 +819,7 @@ app.get('/api/projects', (req, res) => {
   let sql = `
     SELECT p.*,
       pt.name  AS type_name,  pt.color AS type_color,
-      ct.name  AS requestor_name, ct.email AS requestor_email, ct.phone AS requestor_phone,
+      ct.name  AS requestor_name,
       c.name   AS client_name,
       COALESCE(SUM(te.hours), 0)          AS total_hours,
       COUNT(DISTINCT te.id)               AS entry_count,
