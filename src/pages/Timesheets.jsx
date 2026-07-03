@@ -35,8 +35,9 @@ function defaultDateFor(project) {
 
 export default function Timesheets({ initialProjectId }) {
   const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [entries,    setEntries]   = useState([])
-  const [projects,   setProjects]  = useState([])  // only assigned projects
+  const [projects,   setProjects]  = useState([])  // assigned projects (all projects for admins)
   const [wsUsers,    setWsUsers]   = useState([])   // all workspace users
   const [showAll,    setShowAll]   = useState(true) // show all users' entries by default
   const [filters,    setFilters]   = useState({ project_id: '', from: '', to: '', user_id: '' })
@@ -49,7 +50,7 @@ export default function Timesheets({ initialProjectId }) {
 
   useEffect(() => {
     async function loadProjects() {
-      const ps = await api.get('/projects?assigned=true')
+      const ps = await api.get(isAdmin ? '/projects' : '/projects?assigned=true')
       let list = ps
       if (initialProjectId) {
         const found = ps.find(p => p.id === initialProjectId)
@@ -248,7 +249,7 @@ export default function Timesheets({ initialProjectId }) {
                   {e.description || <span style={{ color: '#cbd5e1' }}>—</span>}
                 </td>
                 <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
-                  {e.user_id === user?.id ? (
+                  {e.user_id === user?.id || isAdmin ? (
                     <>
                       <button onClick={() => openEdit(e)} style={{ border: '1px solid #e2e8f0', background: '#fff', padding: '4px 10px', borderRadius: 5, fontSize: 12, color: '#475569', marginRight: 6, cursor: 'pointer' }}>Edit</button>
                       <button onClick={() => del(e.id)}   style={{ border: '1px solid #fecaca', background: '#fff', padding: '4px 10px', borderRadius: 5, fontSize: 12, color: '#ef4444', cursor: 'pointer' }}>Delete</button>
