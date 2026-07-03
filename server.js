@@ -998,8 +998,14 @@ app.post('/api/timesheets', (req, res) => {
   if (isNaN(parsedHours) || parsedHours < 0.25 || parsedHours > 24) {
     return res.status(400).json({ error: 'Hours must be between 0.25 and 24' })
   }
-  const project = db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(project_id, req.workspaceId)
+  const project = db.prepare('SELECT id, report_initiated, report_delivered FROM projects WHERE id = ? AND workspace_id = ?').get(project_id, req.workspaceId)
   if (!project) return res.status(404).json({ error: 'Project not found' })
+  if (project.report_initiated && date < project.report_initiated) {
+    return res.status(400).json({ error: 'Date cannot be before the project Report Initiated date' })
+  }
+  if (project.report_delivered && date > project.report_delivered) {
+    return res.status(400).json({ error: 'Date cannot be after the project Report Delivered date' })
+  }
   if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') {
     const isMember = db.prepare('SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?').get(project_id, req.userId)
     if (!isMember) return res.status(403).json({ error: 'You are not assigned to this project' })
@@ -1024,8 +1030,14 @@ app.put('/api/timesheets/:id', (req, res) => {
     WHERE te.id = ? AND te.user_id = ? AND p.workspace_id = ?
   `).get(req.params.id, req.userId, req.workspaceId)
   if (!entry) return res.status(404).json({ error: 'Timesheet entry not found' })
-  const project = db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(project_id, req.workspaceId)
+  const project = db.prepare('SELECT id, report_initiated, report_delivered FROM projects WHERE id = ? AND workspace_id = ?').get(project_id, req.workspaceId)
   if (!project) return res.status(404).json({ error: 'Project not found' })
+  if (project.report_initiated && date < project.report_initiated) {
+    return res.status(400).json({ error: 'Date cannot be before the project Report Initiated date' })
+  }
+  if (project.report_delivered && date > project.report_delivered) {
+    return res.status(400).json({ error: 'Date cannot be after the project Report Delivered date' })
+  }
   if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') {
     const isMember = db.prepare('SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?').get(project_id, req.userId)
     if (!isMember) return res.status(403).json({ error: 'You are not assigned to this project' })

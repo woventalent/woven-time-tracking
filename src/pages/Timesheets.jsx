@@ -21,6 +21,14 @@ function Field({ label, required, children }) {
 
 function today() { return new Date().toISOString().split('T')[0] }
 
+function defaultDateFor(project) {
+  if (!project) return today()
+  let d = project.report_initiated || today()
+  if (d > today()) d = today()
+  if (project.report_delivered && d > project.report_delivered) d = project.report_delivered
+  return d
+}
+
 export default function Timesheets({ initialProjectId }) {
   const { user } = useAuth()
   const [entries,    setEntries]   = useState([])
@@ -50,7 +58,7 @@ export default function Timesheets({ initialProjectId }) {
         const proj = list.find(p => p.id === initialProjectId)
         setProjects(list)
         setEditing(null)
-        setForm({ client_id: proj?.client_id ? String(proj.client_id) : '', project_id: String(initialProjectId), date: today(), hours: '', description: '' })
+        setForm({ client_id: proj?.client_id ? String(proj.client_id) : '', project_id: String(initialProjectId), date: defaultDateFor(proj), hours: '', description: '' })
         setError('')
         setShowModal(true)
       } else {
@@ -87,9 +95,13 @@ export default function Timesheets({ initialProjectId }) {
     ev.preventDefault()
     setError('')
     const selectedProject = projects.find(p => String(p.id) === form.project_id)
-    if (selectedProject?.request_date && form.date < selectedProject.request_date) {
-      const formatted = new Date(selectedProject.request_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-      setError(`Date cannot be before the project Request Date (${formatted})`)
+    const fmt = d => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    if (selectedProject?.report_initiated && form.date < selectedProject.report_initiated) {
+      setError(`Date cannot be before the project Report Initiated date (${fmt(selectedProject.report_initiated)})`)
+      return
+    }
+    if (selectedProject?.report_delivered && form.date > selectedProject.report_delivered) {
+      setError(`Date cannot be after the project Report Delivered date (${fmt(selectedProject.report_delivered)})`)
       return
     }
     setSaving(true)
@@ -263,7 +275,8 @@ export default function Timesheets({ initialProjectId }) {
           ? projects.filter(p => String(p.client_id) === form.client_id)
           : projects
         const selectedProject = projects.find(p => String(p.id) === form.project_id)
-        const minDate = selectedProject?.request_date || undefined
+        const minDate = selectedProject?.report_initiated || undefined
+        const maxDate = selectedProject?.report_delivered && selectedProject.report_delivered < today() ? selectedProject.report_delivered : today()
         return (
           <Modal title={editing ? 'Edit Time Entry' : 'Log Time'} onClose={() => setShowModal(false)} width={520}>
             <form onSubmit={submit}>
@@ -274,7 +287,10 @@ export default function Timesheets({ initialProjectId }) {
                 </select>
               </Field>
               <Field label="Project" required>
-                <select value={form.project_id} onChange={e => setForm({ ...form, project_id: e.target.value })} style={iStyle} required>
+                <select value={form.project_id} onChange={e => {
+                  const proj = projects.find(p => String(p.id) === e.target.value)
+                  setForm({ ...form, project_id: e.target.value, date: editing ? form.date : defaultDateFor(proj) })
+                }} style={iStyle} required>
                   <option value="">— select a project —</option>
                   {filteredProjects.map(p => (
                     <option key={p.id} value={String(p.id)}>{p.project_code} — {p.name}</option>
@@ -286,7 +302,7 @@ export default function Timesheets({ initialProjectId }) {
               </Field>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <Field label="Date" required>
-                  <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={iStyle} required min={minDate} max={today()} />
+                  <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={iStyle} required min={minDate} max={maxDate} />
                 </Field>
                 <Field label="Hours" required>
                   <input
