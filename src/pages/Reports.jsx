@@ -47,7 +47,8 @@ function businessDays(start, end) {
 
 function downloadCsv(filename, rows) {
   const escape = v => {
-    const s = (v == null ? '' : String(v))
+    let s = (v == null ? '' : String(v))
+    if (/^[=+\-@]/.test(s)) s = `'${s}`
     return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
   }
   const csv = rows.map(r => r.map(escape).join(',')).join('\n')

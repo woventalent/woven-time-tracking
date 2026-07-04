@@ -127,7 +127,8 @@ export default function Projects({ onLogTime }) {
 
   function exportCsv() {
     const escape = v => {
-      const s = (v == null ? '' : String(v))
+      let s = (v == null ? '' : String(v))
+      if (/^[=+\-@]/.test(s)) s = `'${s}`
       return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
     }
     const header = ['Code', 'Project Name', 'Type', 'Request Date', 'Client', 'Requestor', 'Credits', 'Users Assigned', 'Status', 'Report Initiated', 'Report Delivered']
@@ -617,7 +618,7 @@ function ProjectDetail({ project, isAdmin, onClose, onProjectUpdate }) {
 
           {tab === 'members' && (
             <div>
-              {available.length > 0 && (
+              {isAdmin && available.length > 0 && (
                 <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
                   <select value={addUserId} onChange={e => setAddUser(e.target.value)}
                     style={{ ...iStyle, flex: 1 }}>
@@ -655,8 +656,10 @@ function ProjectDetail({ project, isAdmin, onClose, onProjectUpdate }) {
                             Set SPOC
                           </button>
                         )}
-                        <button onClick={() => removeMember(m.id)}
-                          style={{ border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+                        {isAdmin && (
+                          <button onClick={() => removeMember(m.id)}
+                            style={{ border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+                        )}
                       </div>
                     </div>
                   ))}

@@ -45,26 +45,30 @@ async function getGraphToken() {
   return _graphToken
 }
 
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+}
+
 function buildEmailHtml({ toName, project, requestorName, clientName }) {
   const dateAssigned = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
   return `
-    <p>Dear ${toName},</p>
+    <p>Dear ${escapeHtml(toName)},</p>
     <p>A new project has been assigned to you. Please find the project details below:</p>
     <p><strong>Project Details:</strong></p>
     <ul>
-      <li><strong>Project Name:</strong> ${project.name}</li>
-      <li><strong>Project Description:</strong> ${project.description || 'N/A'}</li>
-      <li><strong>Project Requester:</strong> ${requestorName || 'N/A'}</li>
-      <li><strong>Client:</strong> ${clientName || 'N/A'}</li>
+      <li><strong>Project Name:</strong> ${escapeHtml(project.name)}</li>
+      <li><strong>Project Description:</strong> ${escapeHtml(project.description) || 'N/A'}</li>
+      <li><strong>Project Requester:</strong> ${escapeHtml(requestorName) || 'N/A'}</li>
+      <li><strong>Client:</strong> ${escapeHtml(clientName) || 'N/A'}</li>
       <li><strong>Date Assigned:</strong> ${dateAssigned}</li>
-      <li><strong>Project Status:</strong> ${project.status === 'active' ? 'Active' : project.status}</li>
+      <li><strong>Project Status:</strong> ${project.status === 'active' ? 'Active' : escapeHtml(project.status)}</li>
     </ul>
     <p>Please review the project details, initiate the project at the earliest, and schedule a briefing call with the requester.</p>
     <p>You can access the project using the link below:<br>
     <a href="${APP_URL}">Open Project</a></p>
     <p>If you have any questions or require additional information, please get in touch with the project requester or your Team Lead.</p>
     <br>
-    <p>Regards,<br>${project.senderName || 'Time Tracking System'}</p>
+    <p>Regards,<br>${escapeHtml(project.senderName) || 'Time Tracking System'}</p>
   `
 }
 
@@ -700,12 +704,15 @@ app.get('/api/clients/:id/contacts', (req, res) => {
   `).all(req.params.id, req.workspaceId))
 })
 
+const PHONE_RE = /^[0-9+()\-\s.]+$/
+
 app.post('/api/clients/:id/contacts', (req, res) => {
   if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
   const { name, email, phone, role } = req.body
   if (!name?.trim())  return res.status(400).json({ error: 'Full name is required' })
   if (!email?.trim()) return res.status(400).json({ error: 'Email is required' })
   if (!phone?.trim()) return res.status(400).json({ error: 'Phone is required' })
+  if (!PHONE_RE.test(phone.trim())) return res.status(400).json({ error: 'Phone number contains invalid characters' })
   const client = db.prepare('SELECT id FROM clients WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId)
   if (!client) return res.status(404).json({ error: 'Client not found' })
   const r = db.prepare('INSERT INTO contacts (workspace_id, client_id, name, email, phone, role) VALUES (?, ?, ?, ?, ?, ?)').run(
@@ -720,6 +727,7 @@ app.put('/api/contacts/:id', (req, res) => {
   if (!name?.trim())  return res.status(400).json({ error: 'Full name is required' })
   if (!email?.trim()) return res.status(400).json({ error: 'Email is required' })
   if (!phone?.trim()) return res.status(400).json({ error: 'Phone is required' })
+  if (!PHONE_RE.test(phone.trim())) return res.status(400).json({ error: 'Phone number contains invalid characters' })
   db.prepare('UPDATE contacts SET name = ?, email = ?, phone = ?, role = ? WHERE id = ? AND workspace_id = ?')
     .run(name.trim(), email.trim(), phone.trim(), role || null, req.params.id, req.workspaceId)
   res.json({ success: true })
@@ -787,8 +795,18 @@ app.post('/api/workspace-users', (req, res) => {
   } catch { res.status(400).json({ error: 'Could not add user' }) }
 })
 
+function isLastAdmin(userId, workspaceId) {
+  const member = db.prepare('SELECT role FROM workspace_members WHERE user_id = ? AND workspace_id = ?').get(userId, workspaceId)
+  if (member?.role !== 'admin') return false
+  const adminCount = db.prepare("SELECT COUNT(*) AS n FROM workspace_members WHERE workspace_id = ? AND role = 'admin'").get(workspaceId).n
+  return adminCount <= 1
+}
+
 app.put('/api/workspace-users/:userId/role', (req, res) => {
   if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
+  if (req.body.role !== 'admin' && isLastAdmin(req.params.userId, req.workspaceId)) {
+    return res.status(400).json({ error: 'Cannot remove the last admin from a workspace' })
+  }
   db.prepare('UPDATE workspace_members SET role = ? WHERE user_id = ? AND workspace_id = ?')
     .run(req.body.role, req.params.userId, req.workspaceId)
   res.json({ success: true })
@@ -796,11 +814,18 @@ app.put('/api/workspace-users/:userId/role', (req, res) => {
 
 app.delete('/api/workspace-users/:userId', (req, res) => {
   if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
+  if (isLastAdmin(req.params.userId, req.workspaceId)) {
+    return res.status(400).json({ error: 'Cannot remove the last admin from a workspace' })
+  }
   db.prepare('DELETE FROM workspace_members WHERE user_id = ? AND workspace_id = ?').run(req.params.userId, req.workspaceId)
   res.json({ success: true })
 })
 
 // ── PROJECTS ──────────────────────────────────────────────────────────────────
+
+function istToday() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+}
 
 function nextProjectCode(workspaceId) {
   const ws = db.prepare('SELECT code_prefix FROM workspaces WHERE id = ?').get(workspaceId)
@@ -845,6 +870,7 @@ app.get('/api/projects', (req, res) => {
 })
 
 app.post('/api/projects', async (req, res) => {
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Admin only' })
   const { name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours, report_initiated, report_delivered, description, member_ids, spoc_user_id } = req.body
   if (!name?.trim()) return res.status(400).json({ error: 'Project name is required' })
   if (budgeted_hours !== undefined && budgeted_hours !== null && budgeted_hours !== '') {
@@ -939,6 +965,7 @@ app.get('/api/projects/:id/members', (req, res) => {
 })
 
 app.post('/api/projects/:id/members', (req, res) => {
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Admin only' })
   const { userId } = req.body
   const project = db.prepare(`
     SELECT p.*, ct.name AS requestor_name, c.name AS client_name
@@ -968,6 +995,7 @@ app.post('/api/projects/:id/members', (req, res) => {
 })
 
 app.delete('/api/projects/:id/members/:userId', (req, res) => {
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Admin only' })
   const project = db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId)
   if (!project) return res.status(404).json({ error: 'Project not found' })
   db.prepare('DELETE FROM project_members WHERE project_id = ? AND user_id = ?').run(req.params.id, req.params.userId)
@@ -1057,7 +1085,7 @@ app.get('/api/timesheets', (req, res) => {
 app.post('/api/timesheets', (req, res) => {
   const { project_id, date, hours, description } = req.body
   if (!project_id || !date || !hours) return res.status(400).json({ error: 'Project, date, and hours are required' })
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
   if (date > today) return res.status(400).json({ error: 'Time entries cannot be logged for future dates' })
   const parsedHours = parseFloat(hours)
   if (isNaN(parsedHours) || parsedHours < 0.25 || parsedHours > 24) {
@@ -1075,6 +1103,10 @@ app.post('/api/timesheets', (req, res) => {
     const isMember = db.prepare('SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?').get(project_id, req.userId)
     if (!isMember) return res.status(403).json({ error: 'You are not assigned to this project' })
   }
+  const existingHours = db.prepare('SELECT COALESCE(SUM(hours), 0) AS total FROM timesheet_entries WHERE user_id = ? AND date = ?').get(req.userId, date).total
+  if (existingHours + parsedHours > 24) {
+    return res.status(400).json({ error: `Total hours logged for ${date} would exceed 24 (already logged ${existingHours}h)` })
+  }
   const r = db.prepare(
     'INSERT INTO timesheet_entries (project_id, user_id, date, hours, description) VALUES (?, ?, ?, ?, ?)'
   ).run(project_id, req.userId, date, parsedHours, description || null)
@@ -1083,7 +1115,7 @@ app.post('/api/timesheets', (req, res) => {
 
 app.put('/api/timesheets/:id', (req, res) => {
   const { project_id, date, hours, description } = req.body
-  const today = new Date().toISOString().split('T')[0]
+  const today = istToday()
   if (date > today) return res.status(400).json({ error: 'Time entries cannot be logged for future dates' })
   const parsedHours = parseFloat(hours)
   if (isNaN(parsedHours) || parsedHours < 0.25 || parsedHours > 24) {
@@ -1091,7 +1123,7 @@ app.put('/api/timesheets/:id', (req, res) => {
   }
   const isAdmin = req.userRole === 'admin' || req.globalRole === 'super_admin'
   const entry = db.prepare(`
-    SELECT te.id FROM timesheet_entries te
+    SELECT te.id, te.user_id FROM timesheet_entries te
     JOIN projects p ON p.id = te.project_id
     WHERE te.id = ? AND p.workspace_id = ? ${isAdmin ? '' : 'AND te.user_id = ?'}
   `).get(...(isAdmin ? [req.params.id, req.workspaceId] : [req.params.id, req.workspaceId, req.userId]))
@@ -1107,6 +1139,12 @@ app.put('/api/timesheets/:id', (req, res) => {
   if (!isAdmin) {
     const isMember = db.prepare('SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?').get(project_id, req.userId)
     if (!isMember) return res.status(403).json({ error: 'You are not assigned to this project' })
+  }
+  const existingHours = db.prepare(
+    'SELECT COALESCE(SUM(hours), 0) AS total FROM timesheet_entries WHERE user_id = ? AND date = ? AND id != ?'
+  ).get(entry.user_id, date, req.params.id).total
+  if (existingHours + parsedHours > 24) {
+    return res.status(400).json({ error: `Total hours logged for ${date} would exceed 24 (already logged ${existingHours}h)` })
   }
   db.prepare('UPDATE timesheet_entries SET project_id=?, date=?, hours=?, description=? WHERE id=?')
     .run(project_id, date, parsedHours, description || null, req.params.id)

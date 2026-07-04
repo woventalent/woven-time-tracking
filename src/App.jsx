@@ -28,14 +28,22 @@ const PATH_BY_PAGE = {
   calendar: '/calendar', settings: '/settings',
 }
 const PAGE_BY_PATH = Object.fromEntries(Object.entries(PATH_BY_PAGE).map(([page, path]) => [path, page]))
-function pageFromPath(pathname) { return PAGE_BY_PATH[pathname] || 'projects' }
+function pageFromPath(pathname) { return PAGE_BY_PATH[pathname] || null }
 
 function MainApp() {
-  const [page, setPage] = useState(() => pageFromPath(window.location.pathname))
+  const [page, setPage] = useState(() => pageFromPath(window.location.pathname) || 'projects')
   const [logTimeProjectId, setLogTimeProjectId] = useState(null)
 
   useEffect(() => {
-    function onPopState() { setPage(pageFromPath(window.location.pathname)) }
+    if (!pageFromPath(window.location.pathname)) window.history.replaceState({}, '', '/projects')
+  }, [])
+
+  useEffect(() => {
+    function onPopState() {
+      const p = pageFromPath(window.location.pathname)
+      setPage(p || 'projects')
+      if (!p) window.history.replaceState({}, '', '/projects')
+    }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
   }, [])

@@ -19,7 +19,10 @@ function Field({ label, required, children }) {
   )
 }
 
-function today() { return new Date().toISOString().split('T')[0] }
+function today() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 function notYetStarted(project) {
   return !!(project?.report_initiated && project.report_initiated > today())
@@ -136,7 +139,8 @@ export default function Timesheets({ initialProjectId }) {
 
   function exportCsv() {
     const escape = v => {
-      const s = (v == null ? '' : String(v))
+      let s = (v == null ? '' : String(v))
+      if (/^[=+\-@]/.test(s)) s = `'${s}`
       return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
     }
     const header = ['Date', 'Project Code', 'Project Name', 'Client', 'Hours', 'Description']
