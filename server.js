@@ -1252,8 +1252,8 @@ app.get('/api/reports/summary', (req, res) => {
     SELECT COUNT(*) AS n FROM projects WHERE workspace_id = ? AND strftime('%Y', request_date) = ?
   `).get(req.workspaceId, year).n
   const totalCompleted = db.prepare(`
-    SELECT COUNT(*) AS n FROM projects WHERE workspace_id = ? AND strftime('%Y', report_delivered) = ?
-  `).get(req.workspaceId, year).n
+    SELECT COUNT(*) AS n FROM projects WHERE workspace_id = ? AND strftime('%Y', report_delivered) = ? AND report_delivered <= ?
+  `).get(req.workspaceId, year, today).n
   const topClient = db.prepare(`
     SELECT c.name, COUNT(p.id) AS n
     FROM clients c JOIN projects p ON p.client_id = c.id AND p.workspace_id = ?
