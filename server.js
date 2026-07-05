@@ -355,18 +355,20 @@ function getUserWorkspaces(userId) {
   `).all(userId)
 }
 
-function upsertUser({ microsoftOid, email, name }) {
+function upsertUser({ microsoftOid, email, name, updateName = true }) {
   if (microsoftOid) {
     const existing = db.prepare('SELECT * FROM users WHERE microsoft_oid = ?').get(microsoftOid)
     if (existing) {
-      db.prepare('UPDATE users SET name = ?, email = ? WHERE id = ?').run(name, email, existing.id)
-      return existing
+      if (updateName) db.prepare('UPDATE users SET name = ?, email = ? WHERE id = ?').run(name, email, existing.id)
+      else db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email, existing.id)
+      return db.prepare('SELECT * FROM users WHERE id = ?').get(existing.id)
     }
   }
   const byEmail = db.prepare('SELECT * FROM users WHERE email = ?').get(email)
   if (byEmail) {
-    db.prepare('UPDATE users SET name = ?, microsoft_oid = COALESCE(microsoft_oid, ?) WHERE id = ?').run(name, microsoftOid ?? null, byEmail.id)
-    return byEmail
+    if (updateName) db.prepare('UPDATE users SET name = ?, microsoft_oid = COALESCE(microsoft_oid, ?) WHERE id = ?').run(name, microsoftOid ?? null, byEmail.id)
+    else db.prepare('UPDATE users SET microsoft_oid = COALESCE(microsoft_oid, ?) WHERE id = ?').run(microsoftOid ?? null, byEmail.id)
+    return db.prepare('SELECT * FROM users WHERE id = ?').get(byEmail.id)
   }
   const r = db.prepare('INSERT INTO users (microsoft_oid, email, name) VALUES (?, ?, ?)').run(microsoftOid ?? null, email, name)
   return { id: r.lastInsertRowid, email, name }
@@ -374,6 +376,10 @@ function upsertUser({ microsoftOid, email, name }) {
 
 function ensureWorkspaceMember(userId, workspaceId, role = 'member') {
   db.prepare('INSERT OR IGNORE INTO workspace_members (user_id, workspace_id, role) VALUES (?, ?, ?)').run(userId, workspaceId, role)
+}
+
+function isWorkspaceMember(userId, workspaceId) {
+  return !!db.prepare('SELECT 1 FROM workspace_members WHERE user_id = ? AND workspace_id = ?').get(userId, workspaceId)
 }
 
 function maybeElevateSuperAdmin(user) {
@@ -789,9 +795,9 @@ app.post('/api/workspace-users', (req, res) => {
   const { name, email, role } = req.body
   if (!name?.trim() || !email?.trim()) return res.status(400).json({ error: 'Name and email required' })
   try {
-    const user = upsertUser({ microsoftOid: null, email: email.trim(), name: name.trim() })
+    const user = upsertUser({ microsoftOid: null, email: email.trim(), name: name.trim(), updateName: false })
     ensureWorkspaceMember(user.id, req.workspaceId, role || 'member')
-    res.json({ ...user, role: role || 'member' })
+    res.json({ id: user.id, name: user.name, email: user.email, role: role || 'member' })
   } catch { res.status(400).json({ error: 'Could not add user' }) }
 })
 
@@ -825,6 +831,13 @@ app.delete('/api/workspace-users/:userId', (req, res) => {
 
 function istToday() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+}
+
+function projectDateOrderError({ request_date, report_initiated, report_delivered }) {
+  if (report_initiated && request_date && report_initiated < request_date) return 'Report Initiated cannot be before Request Date'
+  if (report_delivered && request_date && report_delivered < request_date) return 'Report Delivered cannot be before Request Date'
+  if (report_delivered && report_initiated && report_delivered < report_initiated) return 'Report Delivered cannot be before Report Initiated'
+  return null
 }
 
 function nextProjectCode(workspaceId) {
@@ -877,6 +890,8 @@ app.post('/api/projects', async (req, res) => {
     const bh = Number(budgeted_hours)
     if (isNaN(bh) || bh < 0) return res.status(400).json({ error: 'Budgeted hours must be a positive number' })
   }
+  const dateOrderError = projectDateOrderError({ request_date, report_initiated, report_delivered })
+  if (dateOrderError) return res.status(400).json({ error: dateOrderError })
   const code = nextProjectCode(req.workspaceId)
   const r = db.prepare(
     'INSERT INTO projects (workspace_id, project_code, name, project_type_id, request_date, requestor_contact_id, client_id, budgeted_hours, report_initiated, report_delivered, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
@@ -889,6 +904,7 @@ app.post('/api/projects', async (req, res) => {
   if (Array.isArray(member_ids) && member_ids.length > 0) {
     for (const uid of member_ids) {
       const numUid  = Number(uid)
+      if (!isWorkspaceMember(numUid, req.workspaceId)) continue
       const isSPOC  = spoc_user_id && numUid === Number(spoc_user_id) ? 1 : 0
       db.prepare('INSERT OR IGNORE INTO project_members (project_id, user_id, is_spoc) VALUES (?, ?, ?)').run(projectId, numUid, isSPOC)
       if (numUid !== req.userId) {
@@ -922,6 +938,8 @@ app.put('/api/projects/:id', (req, res) => {
     const bh = Number(budgeted_hours)
     if (isNaN(bh) || bh < 0) return res.status(400).json({ error: 'Budgeted hours must be a positive number' })
   }
+  const dateOrderError = projectDateOrderError({ request_date, report_initiated, report_delivered })
+  if (dateOrderError) return res.status(400).json({ error: dateOrderError })
   db.prepare(
     'UPDATE projects SET name=?, project_type_id=?, request_date=?, requestor_contact_id=?, client_id=?, budgeted_hours=?, status=?, report_initiated=?, report_delivered=?, description=? WHERE id=? AND workspace_id=?'
   ).run(name, project_type_id || null, request_date || null, requestor_contact_id || null, client_id || null, budgeted_hours || null, status || 'active', report_initiated || null, report_delivered || null, description || null, req.params.id, req.workspaceId)
@@ -976,6 +994,7 @@ app.post('/api/projects/:id/members', (req, res) => {
   `).get(req.params.id, req.workspaceId)
   if (!project) return res.status(404).json({ error: 'Project not found' })
   const numUid = Number(userId)
+  if (!isWorkspaceMember(numUid, req.workspaceId)) return res.status(400).json({ error: 'User is not a member of this workspace' })
   db.prepare('INSERT OR IGNORE INTO project_members (project_id, user_id) VALUES (?, ?)').run(req.params.id, numUid)
   if (numUid !== req.userId) {
     const assignedUser = db.prepare('SELECT name, email FROM users WHERE id = ?').get(numUid)
@@ -1055,6 +1074,10 @@ app.get('/api/projects/:id/documents/:docId/download', (req, res) => {
 app.delete('/api/projects/:id/documents/:docId', (req, res) => {
   const project = db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId)
   if (!project) return res.status(404).json({ error: 'Project not found' })
+  const doc = db.prepare('SELECT user_id FROM project_documents WHERE id = ? AND project_id = ?').get(req.params.docId, req.params.id)
+  if (!doc) return res.status(404).json({ error: 'Document not found' })
+  const isAdmin = req.userRole === 'admin' || req.globalRole === 'super_admin'
+  if (!isAdmin && doc.user_id !== req.userId) return res.status(403).json({ error: 'You can only delete documents you uploaded' })
   db.prepare('DELETE FROM project_documents WHERE id = ? AND project_id = ?').run(req.params.docId, req.params.id)
   res.json({ success: true })
 })
@@ -1222,8 +1245,9 @@ app.get('/api/reports/by-client', (req, res) => {
 })
 
 app.get('/api/reports/summary', (req, res) => {
-  const year = new Date().getFullYear().toString()
-  const yearMonth = new Date().toISOString().slice(0, 7)
+  const today = istToday()
+  const year = today.slice(0, 4)
+  const yearMonth = today.slice(0, 7)
   const totalRequested = db.prepare(`
     SELECT COUNT(*) AS n FROM projects WHERE workspace_id = ? AND strftime('%Y', request_date) = ?
   `).get(req.workspaceId, year).n

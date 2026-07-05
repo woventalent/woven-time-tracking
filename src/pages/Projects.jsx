@@ -491,6 +491,7 @@ function ProjectModal({ project, clients, projectTypes, wsUsers, onSave, onClose
 
 // ── Project detail panel ──────────────────────────────────────────────────────
 function ProjectDetail({ project, isAdmin, onClose, onProjectUpdate }) {
+  const { user }                  = useAuth()
   const [tab,       setTab]       = useState('members')
   const [members,   setMembers]   = useState([])
   const [wsUsers,   setWsUsers]   = useState([])
@@ -730,8 +731,10 @@ function ProjectDetail({ project, isAdmin, onClose, onProjectUpdate }) {
                           style={{ fontSize: 12, color: '#2563eb', textDecoration: 'none', padding: '4px 10px', border: '1px solid #bfdbfe', borderRadius: 6, background: '#eff6ff' }}>
                           Download
                         </a>
-                        <button onClick={() => removeDoc(d.id)}
-                          style={{ border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+                        {(isAdmin || d.user_id === user?.id) && (
+                          <button onClick={() => removeDoc(d.id)}
+                            style={{ border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+                        )}
                       </div>
                     </div>
                   ))}
