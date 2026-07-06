@@ -1,3 +1,4 @@
+import dotenv from 'dotenv'
 import express from 'express'
 import cookieParser from 'cookie-parser'
 import multer from 'multer'
@@ -7,6 +8,8 @@ import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import { existsSync, mkdirSync } from 'fs'
 import { randomUUID, randomBytes } from 'crypto'
+
+dotenv.config()
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const app = express()
