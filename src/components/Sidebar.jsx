@@ -18,6 +18,12 @@ export default function Sidebar({ current, onNav }) {
   const [newWsForm,    setNewWsForm]      = useState({ name: '', code_prefix: '' })
   const [newWsError,   setNewWsError]     = useState('')
   const [creatingWs,   setCreatingWs]     = useState(false)
+  const [mobileOpen,   setMobileOpen]     = useState(false)
+
+  function nav(p) {
+    setMobileOpen(false)
+    onNav(p)
+  }
 
   async function openWsSwitcher() {
     if (!showWsMenu) {
@@ -57,7 +63,40 @@ export default function Sidebar({ current, onNav }) {
   }
 
   return (
-    <aside style={{
+    <>
+      <style>{`
+        .wtt-hamburger { display: none; }
+        .wtt-sidebar-backdrop { display: none; }
+        @media (max-width: 640px) {
+          .wtt-hamburger { display: flex !important; }
+          .wtt-sidebar {
+            position: fixed !important; top: 0; left: 0; height: 100vh;
+            transform: translateX(-100%); transition: transform 0.2s ease; z-index: 300;
+          }
+          .wtt-sidebar.wtt-sidebar-open { transform: translateX(0); }
+          .wtt-sidebar-backdrop.wtt-sidebar-open {
+            display: block !important; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.4); z-index: 290;
+          }
+        }
+      `}</style>
+      {!mobileOpen && (
+        <button
+          className="wtt-hamburger"
+          onClick={() => setMobileOpen(true)}
+          aria-label="Open menu"
+          style={{
+            position: 'fixed', top: 14, left: 14, zIndex: 310,
+            width: 36, height: 36, borderRadius: 8, border: 'none',
+            background: '#0f172a', color: '#f1f5f9', alignItems: 'center',
+            justifyContent: 'center', cursor: 'pointer',
+          }}
+        >
+          <HamburgerIcon size={18} />
+        </button>
+      )}
+      <div className={`wtt-sidebar-backdrop${mobileOpen ? ' wtt-sidebar-open' : ''}`} onClick={() => setMobileOpen(false)} />
+      <aside className={`wtt-sidebar${mobileOpen ? ' wtt-sidebar-open' : ''}`} style={{
       width: 224, flexShrink: 0,
       background: '#0f172a',
       display: 'flex', flexDirection: 'column',
@@ -146,7 +185,7 @@ export default function Sidebar({ current, onNav }) {
           return (
             <button
               key={id}
-              onClick={() => onNav(id)}
+              onClick={() => nav(id)}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', gap: 10,
                 padding: '9px 18px', border: 'none',
@@ -170,7 +209,7 @@ export default function Sidebar({ current, onNav }) {
 
         {/* Settings */}
         <button
-          onClick={() => onNav('settings')}
+          onClick={() => nav('settings')}
           style={{
             width: '100%', display: 'flex', alignItems: 'center', gap: 8,
             padding: '8px 18px', border: 'none',
@@ -244,6 +283,7 @@ export default function Sidebar({ current, onNav }) {
         </div>
       </div>
     </aside>
+    </>
   )
 }
 
@@ -297,6 +337,15 @@ function SignOutIcon({ size }) {
       <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
       <polyline points="16 17 21 12 16 7"/>
       <line x1="21" y1="12" x2="9" y2="12"/>
+    </svg>
+  )
+}
+function HamburgerIcon({ size }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <line x1="3" y1="6" x2="21" y2="6"/>
+      <line x1="3" y1="12" x2="21" y2="12"/>
+      <line x1="3" y1="18" x2="21" y2="18"/>
     </svg>
   )
 }

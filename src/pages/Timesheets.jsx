@@ -20,8 +20,8 @@ function Field({ label, required, children }) {
 }
 
 function today() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  // Mirrors server.js's istToday() so the date picker's bounds match what the server will accept.
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
 }
 
 function notYetStarted(project) {

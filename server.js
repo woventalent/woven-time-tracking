@@ -6,7 +6,7 @@ import nodemailer from 'nodemailer'
 import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
-import { existsSync, mkdirSync } from 'fs'
+import { existsSync, mkdirSync, unlinkSync } from 'fs'
 import { randomUUID, randomBytes } from 'crypto'
 
 dotenv.config()
@@ -124,6 +124,10 @@ const SUPER_ADMIN_EMAILS = new Set(
 // ── Upload dir ────────────────────────────────────────────────────────────────
 const UPLOAD_DIR = join(__dirname, 'uploads')
 mkdirSync(UPLOAD_DIR, { recursive: true })
+
+function deleteUploadedFile(filename) {
+  try { unlinkSync(join(UPLOAD_DIR, filename)) } catch { /* already gone */ }
+}
 
 const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
@@ -467,6 +471,7 @@ app.post('/auth/dev-login', (req, res) => {
   if (MS_AUTH) return res.status(403).json({ error: 'Dev login disabled' })
   const { email, name } = req.body
   if (!email || !name) return res.status(400).json({ error: 'Email and name required' })
+  if (!EMAIL_RE.test(email.trim())) return res.status(400).json({ error: 'Enter a valid email address' })
   const user = upsertUser({ microsoftOid: null, email, name })
   maybeElevateSuperAdmin(user)
   const ws = getUserWorkspaces(user.id)
@@ -714,14 +719,24 @@ app.get('/api/clients/:id/contacts', (req, res) => {
 })
 
 const PHONE_RE = /^[0-9+()\-\s.]+$/
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function contactFieldError({ name, email, phone, role }) {
+  if (!name?.trim())  return 'Full name is required'
+  if (!email?.trim()) return 'Email is required'
+  if (!phone?.trim()) return 'Phone is required'
+  if (/\d/.test(name)) return 'Name should not contain numbers'
+  if (!EMAIL_RE.test(email.trim())) return 'Enter a valid email address'
+  if (!PHONE_RE.test(phone.trim())) return 'Phone number contains invalid characters'
+  if (role && /\d/.test(role)) return 'Role / Title should not contain numbers'
+  return null
+}
 
 app.post('/api/clients/:id/contacts', (req, res) => {
   if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
   const { name, email, phone, role } = req.body
-  if (!name?.trim())  return res.status(400).json({ error: 'Full name is required' })
-  if (!email?.trim()) return res.status(400).json({ error: 'Email is required' })
-  if (!phone?.trim()) return res.status(400).json({ error: 'Phone is required' })
-  if (!PHONE_RE.test(phone.trim())) return res.status(400).json({ error: 'Phone number contains invalid characters' })
+  const fieldError = contactFieldError({ name, email, phone, role })
+  if (fieldError) return res.status(400).json({ error: fieldError })
   const client = db.prepare('SELECT id FROM clients WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId)
   if (!client) return res.status(404).json({ error: 'Client not found' })
   const r = db.prepare('INSERT INTO contacts (workspace_id, client_id, name, email, phone, role) VALUES (?, ?, ?, ?, ?, ?)').run(
@@ -733,10 +748,8 @@ app.post('/api/clients/:id/contacts', (req, res) => {
 app.put('/api/contacts/:id', (req, res) => {
   if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
   const { name, email, phone, role } = req.body
-  if (!name?.trim())  return res.status(400).json({ error: 'Full name is required' })
-  if (!email?.trim()) return res.status(400).json({ error: 'Email is required' })
-  if (!phone?.trim()) return res.status(400).json({ error: 'Phone is required' })
-  if (!PHONE_RE.test(phone.trim())) return res.status(400).json({ error: 'Phone number contains invalid characters' })
+  const fieldError = contactFieldError({ name, email, phone, role })
+  if (fieldError) return res.status(400).json({ error: fieldError })
   db.prepare('UPDATE contacts SET name = ?, email = ?, phone = ?, role = ? WHERE id = ? AND workspace_id = ?')
     .run(name.trim(), email.trim(), phone.trim(), role || null, req.params.id, req.workspaceId)
   res.json({ success: true })
@@ -967,8 +980,10 @@ app.delete('/api/projects/:id', (req, res) => {
   if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Admin only' })
   const project = db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId)
   if (!project) return res.status(404).json({ error: 'Project not found' })
+  const docFilenames = db.prepare('SELECT filename FROM project_documents WHERE project_id = ?').all(req.params.id)
   db.prepare('DELETE FROM timesheet_entries WHERE project_id = ?').run(req.params.id)
   db.prepare('DELETE FROM projects WHERE id = ? AND workspace_id = ?').run(req.params.id, req.workspaceId)
+  docFilenames.forEach(d => deleteUploadedFile(d.filename))
   res.json({ success: true })
 })
 
@@ -1077,11 +1092,12 @@ app.get('/api/projects/:id/documents/:docId/download', (req, res) => {
 app.delete('/api/projects/:id/documents/:docId', (req, res) => {
   const project = db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId)
   if (!project) return res.status(404).json({ error: 'Project not found' })
-  const doc = db.prepare('SELECT user_id FROM project_documents WHERE id = ? AND project_id = ?').get(req.params.docId, req.params.id)
+  const doc = db.prepare('SELECT user_id, filename FROM project_documents WHERE id = ? AND project_id = ?').get(req.params.docId, req.params.id)
   if (!doc) return res.status(404).json({ error: 'Document not found' })
   const isAdmin = req.userRole === 'admin' || req.globalRole === 'super_admin'
   if (!isAdmin && doc.user_id !== req.userId) return res.status(403).json({ error: 'You can only delete documents you uploaded' })
   db.prepare('DELETE FROM project_documents WHERE id = ? AND project_id = ?').run(req.params.docId, req.params.id)
+  deleteUploadedFile(doc.filename)
   res.json({ success: true })
 })
 
