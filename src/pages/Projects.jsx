@@ -450,6 +450,11 @@ function ProjectModal({ project, clients, projectTypes, wsUsers, onSave, onClose
               min={form.report_initiated || form.request_date || undefined} />
           </Field>
         </div>
+        <Field label="Budgeted Hours">
+          <input type="number" min="0" step="0.5" value={form.budgeted_hours}
+            onChange={e => setForm({ ...form, budgeted_hours: e.target.value })}
+            placeholder="e.g. 40" style={iStyle} />
+        </Field>
         <Field label="Client">
           <select value={form.client_id} onChange={e => handleClientChange(e.target.value)} style={iStyle}>
             <option value="">Select client…</option>
@@ -605,6 +610,21 @@ function ProjectDetail({ project, isAdmin, onClose, onProjectUpdate }) {
             <StatPill label="Entries" value={project.entry_count ?? 0} />
             <StatPill label="Members" value={project.member_count ?? 0} />
           </div>
+
+          {!!project.budgeted_hours && (
+            <div style={{ marginTop: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748b', marginBottom: 5 }}>
+                <span>Budget usage</span>
+                <span>{(+project.total_hours || 0).toFixed(1)}h / {(+project.budgeted_hours).toFixed(1)}h ({project.budget_pct ?? 0}%)</span>
+              </div>
+              <div style={{ height: 8, borderRadius: 5, background: '#e2e8f0', overflow: 'hidden' }}>
+                <div style={{
+                  width: `${Math.min(100, project.budget_pct ?? 0)}%`, height: '100%',
+                  background: (project.budget_pct ?? 0) > 100 ? '#ef4444' : (project.budget_pct ?? 0) > 85 ? '#f59e0b' : '#16a34a',
+                }} />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Tabs */}
