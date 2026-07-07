@@ -92,6 +92,10 @@ export default function Reports() {
         (r.users_assigned || '').split('||').filter(Boolean).join('; '),
       ])
       downloadCsv(`reports-by-project-${suffix}.csv`, [header, ...rows])
+    } else if (view === 'client') {
+      const header = ['Client', 'Projects', 'Hours Logged', 'Active Users']
+      const rows = byClient.map(c => [c.client_name, c.project_count, c.total_hours.toFixed(2), c.user_count])
+      downloadCsv(`reports-by-client-${suffix}.csv`, [header, ...rows])
     } else {
       const header = ['User Name', 'Email', 'Total Hours', 'Entries', 'Projects']
       const rows = byUser.map(u => [u.user_name, u.email, u.total_hours.toFixed(2), u.entry_count, u.project_count])

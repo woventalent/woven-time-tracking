@@ -649,21 +649,26 @@ app.get('/api/project-types', (req, res) => {
   res.json(db.prepare('SELECT * FROM project_types WHERE workspace_id = ? ORDER BY name').all(req.workspaceId))
 })
 
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/
+
 app.post('/api/project-types', (req, res) => {
   if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
-  const { name, description } = req.body
+  const { name, description, color } = req.body
   if (!name?.trim()) return res.status(400).json({ error: 'Name is required' })
+  if (color && !HEX_COLOR_RE.test(color)) return res.status(400).json({ error: 'Color must be a hex value like #64748b' })
   try {
-    const r = db.prepare('INSERT INTO project_types (workspace_id, name, description) VALUES (?, ?, ?)').run(req.workspaceId, name.trim(), description || null)
-    res.json({ id: r.lastInsertRowid, name: name.trim(), description: description || null, active: 1 })
+    const r = db.prepare('INSERT INTO project_types (workspace_id, name, description, color) VALUES (?, ?, ?, ?)')
+      .run(req.workspaceId, name.trim(), description || null, color || '#64748b')
+    res.json({ id: r.lastInsertRowid, name: name.trim(), description: description || null, color: color || '#64748b', active: 1 })
   } catch { res.status(400).json({ error: 'Type name already exists' }) }
 })
 
 app.put('/api/project-types/:id', (req, res) => {
   if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Workspace admin only' })
-  const { name, description, active } = req.body
-  db.prepare('UPDATE project_types SET name = ?, description = ?, active = ? WHERE id = ? AND workspace_id = ?')
-    .run(name, description || null, active ?? 1, req.params.id, req.workspaceId)
+  const { name, description, active, color } = req.body
+  if (color && !HEX_COLOR_RE.test(color)) return res.status(400).json({ error: 'Color must be a hex value like #64748b' })
+  db.prepare('UPDATE project_types SET name = ?, description = ?, active = ?, color = ? WHERE id = ? AND workspace_id = ?')
+    .run(name, description || null, active ?? 1, color || '#64748b', req.params.id, req.workspaceId)
   res.json({ success: true })
 })
 
@@ -875,18 +880,16 @@ app.get('/api/projects', (req, res) => {
       pt.name  AS type_name,  pt.color AS type_color,
       ct.name  AS requestor_name,
       c.name   AS client_name,
-      COALESCE(SUM(te.hours), 0)          AS total_hours,
-      COUNT(DISTINCT te.id)               AS entry_count,
-      COUNT(DISTINCT pm.user_id)          AS member_count,
-      ROUND(COALESCE(SUM(te.hours),0) * 100.0 / NULLIF(p.budgeted_hours,0), 1) AS budget_pct,
+      COALESCE((SELECT SUM(hours) FROM timesheet_entries WHERE project_id = p.id), 0) AS total_hours,
+      (SELECT COUNT(*) FROM timesheet_entries WHERE project_id = p.id)                AS entry_count,
+      (SELECT COUNT(*) FROM project_members WHERE project_id = p.id)                  AS member_count,
+      ROUND(COALESCE((SELECT SUM(hours) FROM timesheet_entries WHERE project_id = p.id),0) * 100.0 / NULLIF(p.budgeted_hours,0), 1) AS budget_pct,
       (SELECT GROUP_CONCAT(mu.name, '||') FROM project_members pm2
          JOIN users mu ON mu.id = pm2.user_id WHERE pm2.project_id = p.id) AS users_assigned
     FROM projects p
     LEFT JOIN project_types pt        ON pt.id  = p.project_type_id
     LEFT JOIN contacts ct             ON ct.id  = p.requestor_contact_id
     LEFT JOIN clients c               ON c.id   = p.client_id
-    LEFT JOIN timesheet_entries te    ON te.project_id = p.id
-    LEFT JOIN project_members pm      ON pm.project_id = p.id
     WHERE p.workspace_id = ?
   `
   const params = [req.workspaceId]
@@ -894,7 +897,7 @@ app.get('/api/projects', (req, res) => {
     sql += ' AND p.id IN (SELECT project_id FROM project_members WHERE user_id = ?)'
     params.push(req.userId)
   }
-  sql += ' GROUP BY p.id ORDER BY p.created_at DESC'
+  sql += ' ORDER BY p.created_at DESC'
   res.json(db.prepare(sql).all(...params))
 })
 

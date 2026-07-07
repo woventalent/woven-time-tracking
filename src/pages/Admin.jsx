@@ -34,14 +34,14 @@ function ProjectTypesTab() {
   const [data,      setData]      = useState([])
   const [showModal, setShowModal] = useState(false)
   const [editing,   setEditing]   = useState(null)
-  const [form,      setForm]      = useState({ name: '', description: '' })
+  const [form,      setForm]      = useState({ name: '', description: '', color: '#64748b' })
   const [error,     setError]     = useState('')
 
   useEffect(() => { load() }, [])
   function load() { api.get('/project-types').then(setData) }
 
-  function openAdd()   { setEditing(null); setForm({ name: '', description: '' }); setError(''); setShowModal(true) }
-  function openEdit(t) { setEditing(t); setForm({ name: t.name, description: t.description || '' }); setError(''); setShowModal(true) }
+  function openAdd()   { setEditing(null); setForm({ name: '', description: '', color: '#64748b' }); setError(''); setShowModal(true) }
+  function openEdit(t) { setEditing(t); setForm({ name: t.name, description: t.description || '', color: t.color || '#64748b' }); setError(''); setShowModal(true) }
 
   async function submit(e) {
     e.preventDefault()
@@ -60,7 +60,7 @@ function ProjectTypesTab() {
   }
 
   async function toggle(t) {
-    await api.put('/project-types/' + t.id, { name: t.name, description: t.description, active: t.active ? 0 : 1 })
+    await api.put('/project-types/' + t.id, { name: t.name, description: t.description, color: t.color, active: t.active ? 0 : 1 })
     load()
   }
 
@@ -82,7 +82,7 @@ function ProjectTypesTab() {
         ) : data.map((t, i) => (
           <tr key={t.id} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
             <td style={{ padding: '13px 16px' }}>
-              <span style={{ background: '#eff6ff', color: '#2563eb', fontSize: 13, fontWeight: 600, padding: '4px 12px', borderRadius: 20, border: '1px solid #bfdbfe' }}>
+              <span style={{ background: (t.color || '#64748b') + '1a', color: t.color || '#64748b', fontSize: 13, fontWeight: 600, padding: '4px 12px', borderRadius: 20, border: '1px solid ' + (t.color || '#64748b') + '55' }}>
                 {t.name}
               </span>
             </td>
@@ -110,6 +110,10 @@ function ProjectTypesTab() {
               <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
                 rows={4} style={{ ...iStyle, resize: 'vertical' }}
                 placeholder="Describe what this report type covers…" />
+            </Field>
+            <Field label="Color Tag">
+              <input type="color" value={form.color} onChange={e => setForm({ ...form, color: e.target.value })}
+                style={{ width: 60, height: 34, padding: 2, border: '1px solid #e2e8f0', borderRadius: 6, cursor: 'pointer' }} />
             </Field>
             <ErrMsg msg={error} />
             <ModalBtns onClose={() => setShowModal(false)} label={editing ? 'Save' : 'Add Type'} />
