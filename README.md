@@ -22,7 +22,7 @@ Internal time tracking tool for the Woven Research & Insights team. Tracks time 
 | Database | SQLite (via Node 22 native module) |
 | Auth | Azure AD OAuth2 + custom SQLite sessions |
 | File uploads | multer (stored in `uploads/`) |
-| Process manager | PM2 |
+| Containerization | Docker + Docker Compose (`autoheal` for health-based restarts); PM2 supported as a legacy alternative |
 | Reverse proxy | Caddy (with Let's Encrypt SSL) |
 
 > **Node 22+ required** — the `node:sqlite` built-in is only available from Node 22 onwards.
@@ -69,7 +69,28 @@ npm start
 
 The server serves the compiled `dist/` and all `/api/*` routes from a single Express process.
 
-### Deploying to the server
+### Docker (recommended)
+
+The app ships with a multi-stage `Dockerfile` and a `docker-compose.yml` that runs the app plus an [`autoheal`](https://github.com/willfarrell/docker-autoheal) sidecar, so the service comes back on its own whether it crashes outright or just goes unresponsive:
+
+- `restart: unless-stopped` relaunches the container whenever the process exits.
+- The image's `HEALTHCHECK` hits `/api/health`; `autoheal` watches container health and force-restarts anything Docker marks unhealthy (a hang that never exits on its own).
+- The SQLite DB and `uploads/` live in named volumes (`db-data`, `uploads-data`) so they survive rebuilds/restarts.
+
+```bash
+# On the server, with .env present (see below)
+docker compose up -d --build
+docker compose logs -f app        # tail logs
+docker compose ps                 # check health status
+```
+
+The container listens on `3000` internally and is published on host port `3001` — the same port the existing Caddy config already expects (see [Caddy](#caddy) below), so no reverse-proxy changes are needed when switching from PM2 to Docker.
+
+**Migrating an existing PM2 deployment to Docker:** stop and remove the PM2 process first so it doesn't fight Docker for port 3001 — `pm2 delete woven-time-tracking` — then run `docker compose up -d --build` from `/var/www/time-tracking`. The SQLite DB isn't shared automatically; if you want to carry over existing data, copy the old `timetracking.db` and `uploads/` into the new named volumes before first start (e.g. `docker run --rm -v woven-time-tracking_db-data:/data -v /var/www/time-tracking:/old alpine cp /old/timetracking.db /data/timetracking.db`, similarly for `uploads-data`).
+
+> The GitHub Actions deploy workflow (`.github/workflows/deploy.yml`) still deploys via rsync + PM2. Switch it to `docker compose up -d --build` only once Docker is confirmed installed on the production host — otherwise the next automated deploy will fail outright.
+
+### Deploying to the server (PM2, legacy)
 
 ```bash
 # Sync server files
@@ -100,8 +121,12 @@ Copy `.env.example` to `.env` and fill in:
 | `APP_URL` | Public app URL, used as the link target in assignment emails (set this to your production domain) |
 | `PORT` | Port for the Express server (default `3000`) |
 | `NODE_ENV` | Set to `production` to enable secure (HTTPS-only) session cookies |
+| `DB_PATH` | Path to the SQLite database file (default `<app dir>/timetracking.db`) — set by `docker-compose.yml` to point at the `db-data` volume |
+| `UPLOAD_DIR` | Directory for uploaded project files (default `<app dir>/uploads`) — set by `docker-compose.yml` to point at the `uploads-data` volume |
 
 If `AZURE_CLIENT_ID` is not set, the app falls back to a dev-login form.
+
+`GET /api/health` returns `{ status: 'ok' }` and requires no auth — used by the Docker `HEALTHCHECK` and any external uptime monitor.
 
 ## PM2 & Caddy
 
@@ -168,7 +193,9 @@ Reload Caddy after editing the Caddyfile.
 │   └── main.jsx
 ├── index.html
 ├── vite.config.js
-├── ecosystem.config.cjs      # PM2 config (production)
+├── Dockerfile                # Multi-stage build (frontend build + production runtime)
+├── docker-compose.yml        # App + autoheal, persistent DB/uploads volumes
+├── ecosystem.config.cjs      # PM2 config (legacy alternative to Docker)
 ├── .env.example
 └── package.json
 ```

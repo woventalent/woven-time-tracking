@@ -1,0 +1,41 @@
+services:
+  app:
+    build: .
+    image: woven-time-tracking:latest
+    container_name: woven-time-tracking
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DB_PATH: /app/data/timetracking.db
+      UPLOAD_DIR: /app/uploads
+      PORT: 3000
+    volumes:
+      - db-data:/app/data
+      - uploads-data:/app/uploads
+    ports:
+      - "3001:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  # Docker's own `restart: unless-stopped` only re-launches a container after it
+  # exits — it does nothing for a process that's still running but wedged (health
+  # check failing). autoheal watches container health status and force-restarts
+  # anything Docker has marked unhealthy, so both failure modes are covered.
+  autoheal:
+    image: willfarrell/autoheal
+    container_name: woven-time-tracking-autoheal
+    restart: unless-stopped
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: all
+      AUTOHEAL_INTERVAL: 10
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  db-data:
+  uploads-data:

@@ -122,7 +122,7 @@ const SUPER_ADMIN_EMAILS = new Set(
 )
 
 // ── Upload dir ────────────────────────────────────────────────────────────────
-const UPLOAD_DIR = join(__dirname, 'uploads')
+const UPLOAD_DIR = process.env.UPLOAD_DIR || join(__dirname, 'uploads')
 mkdirSync(UPLOAD_DIR, { recursive: true })
 
 function deleteUploadedFile(filename) {
@@ -161,7 +161,9 @@ const upload = multer({
 })
 
 // ── Database ──────────────────────────────────────────────────────────────────
-const db = new DatabaseSync(join(__dirname, 'timetracking.db'))
+const DB_PATH = process.env.DB_PATH || join(__dirname, 'timetracking.db')
+mkdirSync(dirname(DB_PATH), { recursive: true })
+const db = new DatabaseSync(DB_PATH)
 db.exec('PRAGMA foreign_keys = ON')
 
 db.exec(`
@@ -411,6 +413,7 @@ app.use(cookieParser())
 
 // ── Public ────────────────────────────────────────────────────────────────────
 app.get('/api/config', (_, res) => res.json({ msAuthEnabled: MS_AUTH }))
+app.get('/api/health', (_, res) => res.json({ status: 'ok' }))
 
 // ── Auth: Microsoft SSO ───────────────────────────────────────────────────────
 app.get('/auth/login', (req, res) => {
