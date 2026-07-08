@@ -1076,6 +1076,10 @@ app.post('/api/projects/:id/documents', (req, res, next) => {
 }, (req, res) => {
   const project = db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId)
   if (!project) return res.status(404).json({ error: 'Project not found' })
+  if (req.userRole !== 'admin' && req.globalRole !== 'super_admin') {
+    const isMember = db.prepare('SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?').get(req.params.id, req.userId)
+    if (!isMember) return res.status(403).json({ error: 'You are not assigned to this project' })
+  }
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' })
   const { description } = req.body
   const { filename, originalname, mimetype, size } = req.file

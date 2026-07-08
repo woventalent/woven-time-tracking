@@ -529,13 +529,21 @@ function ProjectDetail({ project, isAdmin, onClose, onProjectUpdate }) {
   }
 
   async function removeMember(uid) {
-    await fetch('/api/projects/' + project.id + '/members/' + uid, { method: 'DELETE' })
+    try {
+      await api.delete('/projects/' + project.id + '/members/' + uid)
+    } catch (err) {
+      alert(err.message)
+    }
     loadMembers()
     refreshProject()
   }
 
   async function setSpoc(uid) {
-    await fetch('/api/projects/' + project.id + '/members/' + uid + '/spoc', { method: 'PATCH' })
+    try {
+      await api.patch('/projects/' + project.id + '/members/' + uid + '/spoc')
+    } catch (err) {
+      alert(err.message)
+    }
     loadMembers()
   }
 
@@ -556,7 +564,11 @@ function ProjectDetail({ project, isAdmin, onClose, onProjectUpdate }) {
 
   async function removeDoc(docId) {
     if (!confirm('Remove this document?')) return
-    await fetch('/api/projects/' + project.id + '/documents/' + docId, { method: 'DELETE' })
+    try {
+      await api.delete('/projects/' + project.id + '/documents/' + docId)
+    } catch (err) {
+      alert(err.message)
+    }
     loadDocs()
   }
 
