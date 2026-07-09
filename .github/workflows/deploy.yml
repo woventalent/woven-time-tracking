@@ -49,4 +49,4 @@ jobs:
       - name: Install production dependencies & restart
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} \
-            "docker compose -f /var/www/time-tracking/docker-compose.yml down 2>/dev/null || true; docker ps -q | xargs docker stop 2>/dev/null || true; fuser -k 3001/tcp 2>/dev/null || true; cd /var/www/time-tracking && npm install --omit=dev --silent && (pm2 restart woven-time-tracking --update-env || pm2 start ecosystem.config.cjs) && pm2 save"
+            "fuser -k 3001/tcp 2>/dev/null || true; sleep 1; cd /var/www/time-tracking && npm install --omit=dev --silent && (pm2 restart woven-time-tracking --update-env || pm2 start ecosystem.config.cjs) && pm2 save && sleep 3 && pm2 logs woven-time-tracking --lines 20 --nostream"
