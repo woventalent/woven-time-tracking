@@ -84,11 +84,11 @@ docker compose logs -f app        # tail logs
 docker compose ps                 # check health status
 ```
 
-The container listens on `3000` internally and is published on host port `3001` — the same port the existing Caddy config already expects (see [Caddy](#caddy) below), so no reverse-proxy changes are needed when switching from PM2 to Docker.
+The container listens on `3000` internally and is published on host port `3002` — deliberately *not* `3001`, the port PM2 binds (see [PM2 & Caddy](#pm2--caddy) below). Docker and PM2 are two independent deployment paths for the same app; running both on the same host is only safe because they no longer share a port. **Never repoint `ports:` back to `3001:3000` while PM2 also manages this app** — an earlier version of this file did exactly that, and the resulting port fight sent PM2's process into a crash-restart loop on production (see #103).
 
-**Migrating an existing PM2 deployment to Docker:** stop and remove the PM2 process first so it doesn't fight Docker for port 3001 — `pm2 delete woven-time-tracking` — then run `docker compose up -d --build` from `/var/www/time-tracking`. The SQLite DB isn't shared automatically; if you want to carry over existing data, copy the old `timetracking.db` and `uploads/` into the new named volumes before first start (e.g. `docker run --rm -v woven-time-tracking_db-data:/data -v /var/www/time-tracking:/old alpine cp /old/timetracking.db /data/timetracking.db`, similarly for `uploads-data`).
+**Migrating an existing PM2 deployment to Docker:** stop and remove the PM2 process first — `pm2 delete woven-time-tracking` — then run `docker compose up -d --build` from `/var/www/time-tracking`, and update Caddy's `reverse_proxy` target from `172.18.0.1:3001` to `172.18.0.1:3002` (see [Caddy](#caddy) below). The SQLite DB isn't shared automatically; if you want to carry over existing data, copy the old `timetracking.db` and `uploads/` into the new named volumes before first start (e.g. `docker run --rm -v woven-time-tracking_db-data:/data -v /var/www/time-tracking:/old alpine cp /old/timetracking.db /data/timetracking.db`, similarly for `uploads-data`).
 
-> The GitHub Actions deploy workflow (`.github/workflows/deploy.yml`) still deploys via rsync + PM2. Switch it to `docker compose up -d --build` only once Docker is confirmed installed on the production host — otherwise the next automated deploy will fail outright.
+> The GitHub Actions deploy workflow (`.github/workflows/deploy.yml`) still deploys via rsync + PM2. Switch it to `docker compose up -d --build` only once Docker is confirmed installed on the production host **and** Caddy has been repointed to port `3002` — otherwise the next automated deploy will fail outright, and testing `docker compose up` manually against the production host beforehand risks the same port-collision crash loop as #103 if PM2 isn't stopped first.
 
 ### Deploying to the server (PM2, legacy)
 
