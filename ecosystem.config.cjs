@@ -15,6 +15,6 @@ module.exports = {
     script: '/var/www/time-tracking/server.js',
     cwd: '/var/www/time-tracking',
     node_args: '--experimental-sqlite',
-    env: { NODE_ENV: 'production', PORT: '3001', ...envVars }
+    env: { NODE_ENV: 'production', PORT: '3007', ...envVars }
   }]
 }
