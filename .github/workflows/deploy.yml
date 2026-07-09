@@ -49,4 +49,4 @@ jobs:
       - name: Install production dependencies & restart
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} \
-            "fuser -k 3001/tcp 2>/dev/null || true; sleep 1; cd /var/www/time-tracking && npm install --omit=dev --silent && (pm2 restart woven-time-tracking --update-env || pm2 start ecosystem.config.cjs) && pm2 save; docker start $(docker ps -aq --filter status=exited --filter name=caddy) 2>/dev/null || true"
+            "fuser -k 3001/tcp 2>/dev/null || true; sleep 1; cd /var/www/time-tracking && npm install --omit=dev --silent && (pm2 restart woven-time-tracking --update-env || pm2 start ecosystem.config.cjs) && pm2 save; systemctl restart caddy 2>/dev/null || true"
