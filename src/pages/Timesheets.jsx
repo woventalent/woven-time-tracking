@@ -280,9 +280,10 @@ export default function Timesheets({ initialProjectId }) {
         const clients = [...new Map(
           projects.filter(p => p.client_id).map(p => [p.client_id, { id: p.client_id, name: p.client_name }])
         ).values()].sort((a, b) => a.name.localeCompare(b.name))
-        const filteredProjects = form.client_id
-          ? projects.filter(p => String(p.client_id) === form.client_id)
-          : projects
+        const filteredProjects = projects.filter(p =>
+          (!form.client_id || String(p.client_id) === form.client_id) &&
+          (p.status === 'active' || String(p.id) === form.project_id)
+        )
         const selectedProject = projects.find(p => String(p.id) === form.project_id)
         const minDate = selectedProject?.report_initiated || undefined
         const maxDate = selectedProject?.report_delivered && selectedProject.report_delivered < today() ? selectedProject.report_delivered : today()
