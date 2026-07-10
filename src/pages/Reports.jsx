@@ -62,13 +62,15 @@ function downloadCsv(filename, rows) {
 export default function Reports() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
-  const [view,      setView]    = useState('project')
-  const [byProject, setByProj]  = useState([])
-  const [byUser,    setByUser]  = useState([])
-  const [byClient,  setByClient] = useState([])
-  const [summary,   setSummary]  = useState(null)
-  const [from,      setFrom]    = useState('')
-  const [to,        setTo]      = useState('')
+  const [view,        setView]        = useState('project')
+  const [byProject,   setByProj]      = useState([])
+  const [byUser,      setByUser]      = useState([])
+  const [byClient,    setByClient]    = useState([])
+  const [byPeriod,    setByPeriod]    = useState([])
+  const [granularity, setGranularity] = useState('day')
+  const [summary,     setSummary]     = useState(null)
+  const [from,        setFrom]        = useState('')
+  const [to,          setTo]          = useState('')
 
   useEffect(() => {
     const q = new URLSearchParams(Object.fromEntries(Object.entries({ from, to }).filter(([, v]) => v)))
@@ -77,6 +79,20 @@ export default function Reports() {
     api.get('/reports/by-client?'  + q).then(setByClient)
     api.get('/reports/summary').then(setSummary)
   }, [from, to])
+
+  useEffect(() => {
+    const q = new URLSearchParams(Object.fromEntries(Object.entries({ from, to, granularity }).filter(([, v]) => v)))
+    api.get('/reports/by-period?' + q).then(setByPeriod)
+  }, [from, to, granularity])
+
+  function formatPeriod(period) {
+    if (granularity === 'day') return new Date(period + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    if (granularity === 'month') {
+      const [y, m] = period.split('-')
+      return new Date(`${y}-${m}-01T00:00:00`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+    }
+    return period.replace('-W', ' · Week ')
+  }
 
   const totalHours = byProject.reduce((s, r) => s + r.total_hours, 0)
 
@@ -96,10 +112,14 @@ export default function Reports() {
       const header = ['Client', 'Projects', 'Hours Logged', 'Active Users']
       const rows = byClient.map(c => [c.client_name, c.project_count, c.total_hours.toFixed(2), c.user_count])
       downloadCsv(`reports-by-client-${suffix}.csv`, [header, ...rows])
-    } else {
+    } else if (view === 'user') {
       const header = ['User Name', 'Email', 'Total Hours', 'Entries', 'Projects']
       const rows = byUser.map(u => [u.user_name, u.email, u.total_hours.toFixed(2), u.entry_count, u.project_count])
       downloadCsv(`reports-by-user-${suffix}.csv`, [header, ...rows])
+    } else {
+      const header = ['Period', 'Hours Logged', 'Entries', 'Active Users']
+      const rows = byPeriod.map(r => [formatPeriod(r.period), r.total_hours.toFixed(2), r.entry_count, r.user_count])
+      downloadCsv(`reports-by-period-${granularity}-${suffix}.csv`, [header, ...rows])
     }
   }
 
@@ -121,7 +141,7 @@ export default function Reports() {
       {/* Controls */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 18, flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ display: 'flex', borderRadius: 7, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
-          {[['project', 'By Project'], ['client', 'By Client'], ['user', 'By User']].map(([id, label]) => (
+          {[['project', 'By Project'], ['client', 'By Client'], ['user', 'By User'], ['period', 'By Period']].map(([id, label]) => (
             <button key={id} onClick={() => setView(id)} style={{
               padding: '8px 16px', border: 'none', fontSize: 13.5, fontWeight: 500,
               background: view === id ? '#2563eb' : '#fff',
@@ -130,6 +150,18 @@ export default function Reports() {
             }}>{label}</button>
           ))}
         </div>
+        {view === 'period' && (
+          <div style={{ display: 'flex', borderRadius: 7, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+            {[['day', 'Daily'], ['week', 'Weekly'], ['month', 'Monthly']].map(([id, label]) => (
+              <button key={id} onClick={() => setGranularity(id)} style={{
+                padding: '8px 14px', border: 'none', fontSize: 13, fontWeight: 500,
+                background: granularity === id ? '#0f172a' : '#fff',
+                color:      granularity === id ? '#fff'    : '#475569',
+                cursor: 'pointer',
+              }}>{label}</button>
+            ))}
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{ fontSize: 13, color: '#94a3b8' }}>From</span>
           <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={iStyle} />
@@ -241,6 +273,37 @@ export default function Reports() {
                   <td style={{ padding: '10px 16px', color: '#64748b' }}>{byClient.reduce((s, c) => s + c.project_count, 0)}</td>
                   <td style={{ padding: '10px 16px', fontWeight: 800, color: '#0f172a', fontSize: 14 }}>{byClient.reduce((s, c) => s + c.total_hours, 0).toFixed(1)}h</td>
                   <td />
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        ) : view === 'period' ? (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
+            <thead>
+              <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                {['Period', 'Hours Logged', 'Entries', 'Active Users'].map(h => (
+                  <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {byPeriod.length === 0 ? (
+                <tr><td colSpan={4} style={{ padding: '48px', textAlign: 'center', color: '#94a3b8' }}>No data yet</td></tr>
+              ) : byPeriod.map((r, i) => (
+                <tr key={r.period} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
+                  <td style={{ padding: '13px 16px', fontWeight: 600, color: '#0f172a' }}>{formatPeriod(r.period)}</td>
+                  <td style={{ padding: '13px 16px', fontWeight: 700, color: '#0f172a' }}>{r.total_hours.toFixed(1)}h</td>
+                  <td style={{ padding: '13px 16px', color: '#64748b' }}>{r.entry_count}</td>
+                  <td style={{ padding: '13px 16px', color: '#64748b' }}>{r.user_count}</td>
+                </tr>
+              ))}
+            </tbody>
+            {byPeriod.length > 0 && (
+              <tfoot>
+                <tr style={{ background: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
+                  <td style={{ padding: '10px 16px', fontWeight: 600, color: '#475569', fontSize: 13 }}>Total</td>
+                  <td style={{ padding: '10px 16px', fontWeight: 800, color: '#0f172a', fontSize: 14 }}>{byPeriod.reduce((s, r) => s + r.total_hours, 0).toFixed(1)}h</td>
+                  <td colSpan={2} />
                 </tr>
               </tfoot>
             )}
