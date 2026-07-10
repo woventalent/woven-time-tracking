@@ -1273,6 +1273,25 @@ app.get('/api/reports/by-client', (req, res) => {
   `).all(req.workspaceId, ...dateParams, req.workspaceId))
 })
 
+app.get('/api/reports/by-period', (req, res) => {
+  const { from, to } = req.query
+  const granularity = ['day', 'week', 'month'].includes(req.query.granularity) ? req.query.granularity : 'day'
+  const dateFilter = from && to ? 'AND te.date BETWEEN ? AND ?' : from ? 'AND te.date >= ?' : to ? 'AND te.date <= ?' : ''
+  const dateParams = from && to ? [from, to] : from ? [from] : to ? [to] : []
+  const bucket = granularity === 'day' ? 'te.date' : granularity === 'week' ? "strftime('%Y-W%W', te.date)" : "strftime('%Y-%m', te.date)"
+  const rows = db.prepare(`
+    SELECT ${bucket} AS period,
+           COALESCE(SUM(te.hours), 0)    AS total_hours,
+           COUNT(*)                      AS entry_count,
+           COUNT(DISTINCT te.user_id)    AS user_count
+    FROM timesheet_entries te
+    JOIN projects p ON p.id = te.project_id
+    WHERE p.workspace_id = ? ${dateFilter}
+    GROUP BY period ORDER BY period ASC
+  `).all(req.workspaceId, ...dateParams)
+  res.json(rows)
+})
+
 app.get('/api/reports/summary', (req, res) => {
   const today = istToday()
   const year = today.slice(0, 4)
