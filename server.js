@@ -1250,10 +1250,12 @@ app.get('/api/reports/by-user', (req, res) => {
            COUNT(DISTINCT te.project_id) AS project_count
     FROM users u
     JOIN workspace_members wm ON wm.user_id = u.id AND wm.workspace_id = ?
-    LEFT JOIN timesheet_entries te ON te.user_id = u.id
-    LEFT JOIN projects p ON p.id = te.project_id ${dateFilter}
+    LEFT JOIN timesheet_entries te
+      ON te.user_id = u.id
+      AND te.project_id IN (SELECT id FROM projects WHERE workspace_id = ?)
+      ${dateFilter}
     GROUP BY u.id ORDER BY total_hours DESC
-  `).all(req.workspaceId, ...dateParams))
+  `).all(req.workspaceId, req.workspaceId, ...dateParams))
 })
 
 app.get('/api/reports/by-client', (req, res) => {
