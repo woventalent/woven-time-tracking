@@ -441,12 +441,10 @@ function ProjectModal({ project, clients, projectTypes, wsUsers, onSave, onClose
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <Field label="Report Initiated">
-            <input type="date" value={form.report_initiated} onChange={e => setForm({ ...form, report_initiated: e.target.value })} style={iStyle}
-              min={form.request_date || undefined} />
+            <input type="date" value={form.report_initiated} onChange={e => setForm({ ...form, report_initiated: e.target.value })} style={iStyle} />
           </Field>
           <Field label="Report Delivered">
-            <input type="date" value={form.report_delivered} onChange={e => setForm({ ...form, report_delivered: e.target.value })} style={iStyle}
-              min={form.report_initiated || form.request_date || undefined} />
+            <input type="date" value={form.report_delivered} onChange={e => setForm({ ...form, report_delivered: e.target.value })} style={iStyle} />
           </Field>
         </div>
         <Field label="Budgeted Hours">
