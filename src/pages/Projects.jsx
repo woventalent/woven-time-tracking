@@ -26,14 +26,19 @@ const STATUS_COLORS = {
   cancelled: { bg: '#fee2e2', fg: '#b91c1c' },
 }
 
-function CreditsDisplay({ hours }) {
-  const credits = (+(hours || 0) / 9)
-  if (!hours || +hours === 0) return <span style={{ fontSize: 13, color: '#94a3b8' }}>—</span>
-  return (
-    <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
-      {credits.toFixed(2)} <span style={{ fontSize: 11, color: '#64748b', fontWeight: 400 }}>credits</span>
-    </span>
-  )
+function businessDays(start, end) {
+  if (!start || !end) return null
+  const d1 = new Date(start + 'T00:00:00')
+  const d2 = new Date(end   + 'T00:00:00')
+  if (d2 < d1) return null
+  let count = 0
+  const cur = new Date(d1)
+  while (cur <= d2) {
+    const day = cur.getDay()
+    if (day !== 0 && day !== 6) count++
+    cur.setDate(cur.getDate() + 1)
+  }
+  return count
 }
 
 export default function Projects({ onLogTime }) {
@@ -104,7 +109,7 @@ export default function Projects({ onLogTime }) {
       (p.requestor_name || '').toLowerCase().includes(q)
   })
 
-  const SORTABLE_COLUMNS = { request_date: 'Request Date', report_initiated: 'Report Initiated', report_delivered: 'Report Delivered' }
+  const SORTABLE_COLUMNS = { request_date: 'Request Date' }
 
   function toggleSort(col) {
     if (sortBy === col) {
@@ -185,7 +190,7 @@ export default function Projects({ onLogTime }) {
         <table style={{ width: '100%', minWidth: 1000, borderCollapse: 'collapse', fontSize: 13.5 }}>
           <thead>
             <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-              {['Code', 'Project Name', 'Type', 'Request Date', 'Client', 'Requestor', ...(isAdmin ? ['Credits'] : []), 'Users Assigned', 'Status', 'Report Initiated', 'Report Delivered', ''].map(h => {
+              {['Code', 'Project Name', 'Type', 'Request Date', 'Client', 'Users Assigned', 'Status', 'TAT', ''].map(h => {
                 const col = Object.keys(SORTABLE_COLUMNS).find(k => SORTABLE_COLUMNS[k] === h)
                 return (
                   <th key={h} onClick={col ? () => toggleSort(col) : undefined}
@@ -204,7 +209,7 @@ export default function Projects({ onLogTime }) {
           <tbody>
             {sorted.length === 0 ? (
               <tr>
-                <td colSpan={11} style={{ padding: '48px 16px', textAlign: 'center', color: '#94a3b8' }}>
+                <td colSpan={9} style={{ padding: '48px 16px', textAlign: 'center', color: '#94a3b8' }}>
                   {search ? 'No projects match your search' : 'No projects yet — create one to get started'}
                 </td>
               </tr>
@@ -233,16 +238,6 @@ export default function Projects({ onLogTime }) {
                     {p.request_date ? new Date(p.request_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : <span style={{ color: '#cbd5e1' }}>—</span>}
                   </td>
                   <td style={{ padding: '13px 16px', color: '#475569' }}>{p.client_name || <span style={{ color: '#cbd5e1' }}>—</span>}</td>
-                  <td style={{ padding: '13px 16px' }}>
-                    {p.requestor_name
-                      ? <div style={{ color: '#1e293b', fontWeight: 500 }}>{p.requestor_name}</div>
-                      : <span style={{ color: '#cbd5e1' }}>—</span>}
-                  </td>
-                  {isAdmin && (
-                    <td style={{ padding: '13px 16px' }}>
-                      <CreditsDisplay hours={p.total_hours} />
-                    </td>
-                  )}
                   <td style={{ padding: '13px 16px', maxWidth: 180 }}>
                     {p.users_assigned
                       ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
@@ -270,11 +265,13 @@ export default function Projects({ onLogTime }) {
                       </span>
                     )}
                   </td>
-                  <td style={{ padding: '13px 16px', color: '#475569', whiteSpace: 'nowrap' }}>
-                    {p.report_initiated ? new Date(p.report_initiated + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : <span style={{ color: '#cbd5e1' }}>—</span>}
-                  </td>
-                  <td style={{ padding: '13px 16px', color: '#475569', whiteSpace: 'nowrap' }}>
-                    {p.report_delivered ? new Date(p.report_delivered + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : <span style={{ color: '#cbd5e1' }}>—</span>}
+                  <td style={{ padding: '13px 16px', whiteSpace: 'nowrap' }}>
+                    {(() => {
+                      const tat = businessDays(p.report_initiated, p.report_delivered)
+                      return tat != null
+                        ? <span style={{ fontWeight: 600, color: '#0f172a' }}>{tat}d</span>
+                        : <span style={{ color: '#cbd5e1' }}>—</span>
+                    })()}
                   </td>
                   <td style={{ padding: '13px 16px', whiteSpace: 'nowrap' }}>
                     {myProjectIds.has(p.id) && (
@@ -618,6 +615,28 @@ function ProjectDetail({ project, isAdmin, onClose, onProjectUpdate }) {
             <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 22, cursor: 'pointer', color: '#94a3b8', lineHeight: 1, padding: '0 0 0 8px' }}>×</button>
           </div>
 
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 16, padding: '14px 16px', background: '#f8fafc', borderRadius: 8, border: '1px solid #f1f5f9' }}>
+            <DetailField label="Request Date" value={fmtDate(project.request_date)} />
+            <DetailField label="Requestor" value={project.requestor_name} />
+            <DetailField label="Report Initiated" value={fmtDate(project.report_initiated)} />
+            <DetailField label="Report Delivered" value={fmtDate(project.report_delivered)} />
+            <DetailField label="TAT" value={(() => {
+              const tat = businessDays(project.report_initiated, project.report_delivered)
+              return tat != null ? `${tat}d` : null
+            })()} />
+            <div style={{ gridColumn: '1 / -1' }}>
+              <DetailField label="Users Assigned" value={null}>
+                {project.users_assigned
+                  ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 2 }}>
+                      {[...new Set(project.users_assigned.split('||').filter(Boolean))].map(n => (
+                        <span key={n} style={{ background: '#fff', color: '#475569', fontSize: 11, padding: '2px 7px', borderRadius: 10, border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>{n.trim()}</span>
+                      ))}
+                    </div>
+                  : <span style={{ fontSize: 13, color: '#cbd5e1' }}>—</span>}
+              </DetailField>
+            </div>
+          </div>
+
           <div style={{ display: 'flex', gap: 24, marginTop: 16 }}>
             <StatPill label="Logged"  value={`${(+project.total_hours || 0).toFixed(1)}h`} />
             {isAdmin && <StatPill label="Credits" value={`${((+project.total_hours || 0) / 9).toFixed(2)}`} />}
@@ -787,6 +806,19 @@ function StatPill({ label, value }) {
     <div>
       <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
       <div style={{ fontSize: 20, fontWeight: 700, color: '#0f172a' }}>{value}</div>
+    </div>
+  )
+}
+
+function fmtDate(d) {
+  return d ? new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : null
+}
+
+function DetailField({ label, value, children }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>{label}</div>
+      {children ?? <div style={{ fontSize: 13, color: value ? '#1e293b' : '#cbd5e1', fontWeight: value ? 500 : 400 }}>{value || '—'}</div>}
     </div>
   )
 }
