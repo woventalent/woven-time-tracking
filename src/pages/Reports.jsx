@@ -315,7 +315,7 @@ export default function Reports() {
               <tfoot>
                 <tr style={{ background: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
                   <td style={{ padding: '10px 16px', fontWeight: 600, color: '#475569', fontSize: 13 }}>Total</td>
-                  <td style={{ padding: '10px 16px', fontWeight: 800, color: '#0f172a', fontSize: 14 }}>{totalHours.toFixed(1)}h</td>
+                  <td style={{ padding: '10px 16px', fontWeight: 800, color: '#0f172a', fontSize: 14 }}>{byUser.reduce((s, u) => s + u.total_hours, 0).toFixed(1)}h</td>
                   <td colSpan={2} />
                 </tr>
               </tfoot>

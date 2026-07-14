@@ -277,12 +277,12 @@ export default function Timesheets({ initialProjectId }) {
 
       {/* Log Time Modal */}
       {showModal && (() => {
+        const selectableProjects = projects.filter(p => p.status === 'active' || String(p.id) === form.project_id)
         const clients = [...new Map(
-          projects.filter(p => p.client_id).map(p => [p.client_id, { id: p.client_id, name: p.client_name }])
+          selectableProjects.filter(p => p.client_id).map(p => [p.client_id, { id: p.client_id, name: p.client_name }])
         ).values()].sort((a, b) => a.name.localeCompare(b.name))
-        const filteredProjects = projects.filter(p =>
-          (!form.client_id || String(p.client_id) === form.client_id) &&
-          (p.status === 'active' || String(p.id) === form.project_id)
+        const filteredProjects = selectableProjects.filter(p =>
+          !form.client_id || String(p.client_id) === form.client_id
         )
         const selectedProject = projects.find(p => String(p.id) === form.project_id)
         const minDate = selectedProject?.report_initiated || undefined
@@ -308,7 +308,13 @@ export default function Timesheets({ initialProjectId }) {
                   ))}
                 </select>
                 {filteredProjects.length === 0 && (
-                  <p style={{ fontSize: 12, color: '#f59e0b', marginTop: 4 }}>You have no projects assigned. Ask an admin to allocate you to a project.</p>
+                  <p style={{ fontSize: 12, color: '#f59e0b', marginTop: 4 }}>
+                    {projects.length === 0
+                      ? 'You have no projects assigned. Ask an admin to allocate you to a project.'
+                      : selectableProjects.length === 0
+                        ? 'None of your assigned projects are currently active.'
+                        : 'None of your active projects belong to this client.'}
+                  </p>
                 )}
                 {blockedByStartDate && (
                   <p style={{ fontSize: 12, color: '#f59e0b', marginTop: 4 }}>
