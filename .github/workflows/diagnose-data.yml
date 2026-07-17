@@ -1,0 +1,65 @@
+name: Diagnose Production Data
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Write DB inspection script
+        run: |
+          cat > /tmp/inspect_db.js << 'EOF'
+          const { DatabaseSync } = require('node:sqlite')
+          const path = process.argv[2]
+          const fs = require('fs')
+          if (!fs.existsSync(path)) { console.log('no db file at ' + path); process.exit(0) }
+          const db = new DatabaseSync(path, { readOnly: true })
+          for (const t of ['users', 'workspaces', 'projects', 'timesheet_entries']) {
+            try {
+              const n = db.prepare('SELECT COUNT(*) AS c FROM ' + t).get().c
+              console.log(t + ': ' + n)
+            } catch (e) { console.log(t + ': ERROR ' + e.message) }
+          }
+          try {
+            const r = db.prepare('SELECT MIN(date) AS a, MAX(date) AS b FROM timesheet_entries').get()
+            console.log('timesheet date range: ' + r.a + ' to ' + r.b)
+          } catch (e) {}
+          EOF
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes /tmp/inspect_db.js root@${{ secrets.SSH_HOST }}:/tmp/inspect_db.js
+
+      - name: List containers and volumes (read-only)
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            echo "=== ALL containers (including stopped) ===";
+            docker ps -a --format "{{.ID}}  {{.Names}}  {{.Image}}  {{.Status}}  {{.Ports}}";
+            echo;
+            echo "=== ALL docker volumes ===";
+            docker volume ls;
+            echo;
+            echo "=== currently running app container env (DB_PATH) ===";
+            docker inspect woven-time-tracking --format "{{range .Config.Env}}{{println .}}{{end}}" 2>/dev/null | grep -i db_path || echo "container not found or not running";
+            echo;
+            echo "=== currently running app container mounts ===";
+            docker inspect woven-time-tracking --format "{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}" 2>/dev/null || echo "container not found or not running";
+            echo;
+            echo "=== any timetracking.db files on the host filesystem outside Docker internals ===";
+            find / -xdev -iname "timetracking.db*" -not -path "*/var/lib/docker/*" 2>/dev/null;
+          '
+
+      - name: Row counts for every db-data volume found
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            for vol in $(docker volume ls -q | grep -i db-data); do
+              echo "--- volume: $vol ---";
+              docker run --rm -v "$vol":/data:ro -v /tmp/inspect_db.js:/inspect.js:ro node:22-alpine node --experimental-sqlite /inspect.js /data/timetracking.db;
+              echo;
+            done
+          '
