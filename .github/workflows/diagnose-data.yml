@@ -64,6 +64,19 @@ jobs:
             done
           '
 
+      - name: Locate the exact active Caddyfile
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            echo "=== all Caddyfile-ish files on host ===";
+            find / -xdev -iname "Caddyfile*" -not -path "*/var/lib/docker/*" 2>/dev/null;
+            echo;
+            echo "=== is caddy a systemd service? ===";
+            systemctl status caddy --no-pager 2>&1 | head -20 || echo "no systemd caddy service";
+            echo;
+            echo "=== caddy container (if containerized) ===";
+            docker ps -a --filter "name=caddy" --format "{{.ID}} {{.Names}} {{.Status}}";
+          '
+
       - name: Current live status (containers, ports, PM2, Caddy target)
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
