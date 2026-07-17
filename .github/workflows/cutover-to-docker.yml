@@ -1,0 +1,96 @@
+name: Cutover PM2 to Docker (stage 1 - data + container, no Caddy yet)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  cutover:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Backup PM2's live data before touching anything
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            mkdir -p /root/pm2-to-docker-backup
+            cp /var/www/time-tracking/timetracking.db /root/pm2-to-docker-backup/timetracking.db.bak
+            cp -r /var/www/time-tracking/uploads /root/pm2-to-docker-backup/uploads.bak 2>/dev/null || echo "no uploads dir to back up"
+            ls -la /root/pm2-to-docker-backup/
+          '
+
+      - name: Seed the Docker volume with PM2 real data (not the misplaced alternative-ens-deployment copy)
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            # Stop the empty-DB container first so nothing else touches this volume mid-copy.
+            docker stop woven-time-tracking 2>/dev/null || echo "already stopped / not found";
+
+            echo "=== volume contents before seeding ===";
+            docker run --rm -v time-tracking_db-data:/data alpine ls -la /data;
+
+            echo "=== copying PM2 real db into the volume ===";
+            docker run --rm -v time-tracking_db-data:/data -v /var/www/time-tracking:/src:ro alpine cp /src/timetracking.db /data/timetracking.db;
+
+            echo "=== copying PM2 uploads into the volume (if any) ===";
+            docker run --rm -v time-tracking_uploads-data:/data -v /var/www/time-tracking:/src:ro alpine sh -c "cp -r /src/uploads/. /data/ 2>/dev/null || echo no-uploads";
+
+            echo "=== volume contents after seeding ===";
+            docker run --rm -v time-tracking_db-data:/data alpine ls -la /data;
+          '
+
+      - name: Stop PM2 woven-time-tracking (full decommission per architecture migration)
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            pm2 delete woven-time-tracking || echo "pm2 process not found / already stopped";
+            pm2 save || true;
+            pm2 list;
+          '
+
+      - name: Bring up the Docker container with the seeded (real) data
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} \
+            "cd /var/www/time-tracking && docker compose up -d --build --remove-orphans"
+
+      - name: Wait for healthy and verify real data is being served (directly on 3002, Caddy not touched yet)
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            for i in $(seq 1 24); do
+              status=$(docker inspect --format="{{.State.Health.Status}}" woven-time-tracking 2>/dev/null || echo "starting")
+              echo "health check $i/24: $status"
+              if [ "$status" = "healthy" ]; then break; fi
+              if [ "$status" = "unhealthy" ]; then
+                echo "--- container logs ---"
+                docker logs --tail 100 woven-time-tracking
+                exit 1
+              fi
+              sleep 5
+            done
+
+            echo "=== direct health check on container port 3002 ===";
+            curl -s http://localhost:3002/api/health; echo
+
+            echo "=== port 3007 (PM2, should now be free) ===";
+            (ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null) | grep ":3007\b" || echo "3007 is free (PM2 stopped)";
+          '
+
+      - name: "Row counts inside the now-live Docker volume (should match PM2 - 21 projects, 31 entries)"
+        run: |
+          cat > /tmp/inspect_db.js << 'EOF'
+          const { DatabaseSync } = require('node:sqlite')
+          const path = process.argv[2]
+          const db = new DatabaseSync(path, { readOnly: true })
+          for (const t of ['users', 'workspaces', 'projects', 'timesheet_entries']) {
+            const n = db.prepare('SELECT COUNT(*) AS c FROM ' + t).get().c
+            console.log(t + ': ' + n)
+          }
+          const r = db.prepare('SELECT MIN(date) AS a, MAX(date) AS b FROM timesheet_entries').get()
+          console.log('timesheet date range: ' + r.a + ' to ' + r.b)
+          EOF
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes /tmp/inspect_db.js root@${{ secrets.SSH_HOST }}:/tmp/inspect_db.js
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            docker run --rm -v time-tracking_db-data:/data:ro -v /tmp/inspect_db.js:/inspect.js:ro node:22-alpine node --experimental-sqlite /inspect.js /data/timetracking.db
+          '
