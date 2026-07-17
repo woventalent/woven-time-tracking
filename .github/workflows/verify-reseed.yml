@@ -1,0 +1,63 @@
+name: Verify reseed result (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Write verify script
+        run: |
+          cat > /tmp/verify.js << 'EOF'
+          const { DatabaseSync } = require('node:sqlite')
+          const db = new DatabaseSync('/data/timetracking.db', { readOnly: true })
+          for (const t of ['users', 'workspaces', 'projects', 'timesheet_entries']) {
+            console.log(t + ': ' + db.prepare('SELECT COUNT(*) AS c FROM ' + t).get().c)
+          }
+          const danial = db.prepare("SELECT id FROM users WHERE name = 'Danial K'").get()
+          const n = db.prepare('SELECT COUNT(*) AS c FROM timesheet_entries WHERE user_id = ?').get(danial.id).c
+          console.log('Danial K entries: ' + n)
+          EOF
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes /tmp/verify.js root@${{ secrets.SSH_HOST }}:/tmp/verify.js
+
+      - name: Check container status and run verification separately
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            echo "=== docker ps ===";
+            docker ps --filter name=woven-time-tracking;
+          '
+
+      - name: Health check loop
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            for i in $(seq 1 24); do
+              status=$(docker inspect --format="{{.State.Health.Status}}" woven-time-tracking 2>/dev/null || echo "starting")
+              echo "health check $i/24: $status"
+              if [ "$status" = "healthy" ]; then break; fi
+              if [ "$status" = "unhealthy" ]; then
+                docker logs --tail 100 woven-time-tracking
+                exit 1
+              fi
+              sleep 5
+            done
+          '
+
+      - name: API health endpoint
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            curl -s http://localhost:3002/api/health; echo
+          '
+
+      - name: Run DB verification
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            docker run --rm -v time-tracking_db-data:/data:ro -v /tmp/verify.js:/v.js:ro node:22-alpine node --experimental-sqlite /v.js
+          '
