@@ -1,0 +1,67 @@
+name: Repoint Caddy from PM2 (3007) to Docker (3002)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  repoint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Inspect the Caddy container to find the reload mechanism (read-only)
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            echo "=== plane-app_proxy_1 image/binary ===";
+            docker exec plane-app_proxy_1 caddy version || echo "caddy binary not found via that name";
+            echo;
+            echo "=== config path caddy is running with ===";
+            docker exec plane-app_proxy_1 ps aux | grep caddy || echo "no caddy process match";
+            echo;
+            echo "=== confirm the host Caddyfile is the one mounted into the container ===";
+            docker inspect plane-app_proxy_1 --format "{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}" | grep -i caddy || echo "no caddyfile mount found — may be a different container";
+          '
+
+      - name: Backup the live Caddyfile before editing
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            cp /opt/plane-deploy/plane-app/Caddyfile /root/pm2-to-docker-backup/Caddyfile.bak.$(date +%s) 2>/dev/null || mkdir -p /root/pm2-to-docker-backup && cp /opt/plane-deploy/plane-app/Caddyfile /root/pm2-to-docker-backup/Caddyfile.bak
+            grep -A2 "time.woventalent.in" /opt/plane-deploy/plane-app/Caddyfile
+          '
+
+      - name: Repoint time.woventalent.in from 3007 to 3002
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            sed -i "/time.woventalent.in {/,/}/ s/reverse_proxy 172.18.0.1:3007/reverse_proxy 172.18.0.1:3002/" /opt/plane-deploy/plane-app/Caddyfile
+            echo "=== updated block ===";
+            grep -A2 "time.woventalent.in" /opt/plane-deploy/plane-app/Caddyfile
+          '
+
+      - name: Reload Caddy gracefully (does not restart the container — other sites unaffected)
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            docker exec plane-app_proxy_1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+          '
+
+      - name: Verify the live site now serves via Docker
+        run: |
+          sleep 3
+          echo "=== /api/health ==="
+          curl -s https://time.woventalent.in/api/health --max-time 15
+          echo
+          echo "=== site status ==="
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" https://time.woventalent.in/ --max-time 15
+          echo "=== confirm other sites on the same proxy still work ==="
+          curl -s -o /dev/null -w "prism.woventalent.in HTTP %{http_code}\n" https://prism.woventalent.in/ --max-time 15 || echo "prism check failed (may be expected if not publicly reachable from here)"
+
+      - name: Report — PM2 still running as a safety net
+        run: |
+          echo "Caddy now points time.woventalent.in at the Docker container (172.18.0.1:3002)."
+          echo "PM2's woven-time-tracking process has NOT been stopped — it's an idle safety net."
+          echo "Once you've confirmed the live site works correctly end-to-end, run the"
+          echo "'Decommission PM2' workflow to fully stop it."
