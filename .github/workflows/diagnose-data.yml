@@ -63,3 +63,31 @@ jobs:
               echo;
             done
           '
+
+      - name: Row counts for host .db files found (PM2-era + alternative-ens-deployment)
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            for f in /var/www/time-tracking/timetracking.db /opt/alternative-ens-deployment/time-tracking/data/timetracking.db /opt/alternative-ens-deployment/time-tracking/timetracking.db; do
+              echo "--- file: $f ---";
+              if [ -f "$f" ]; then
+                dir=$(dirname "$f");
+                base=$(basename "$f");
+                docker run --rm -v "$dir":/data:ro -v /tmp/inspect_db.js:/inspect.js:ro node:22-alpine node --experimental-sqlite /inspect.js "/data/$base";
+              else
+                echo "file does not exist";
+              fi
+              echo;
+            done
+
+            echo "=== alternative-ens-deployment time-tracking directory listing ===";
+            ls -la /opt/alternative-ens-deployment/time-tracking/ 2>/dev/null || echo "directory not found";
+            echo;
+            echo "=== alternative-ens-deployment compose file (if any) ===";
+            cat /opt/alternative-ens-deployment/time-tracking/docker-compose.yml 2>/dev/null || cat /opt/alternative-ens-deployment/docker-compose.yml 2>/dev/null || echo "no compose file found at either path";
+            echo;
+            echo "=== inspect the stopped alternative-ens-deployment time-tracking container ===";
+            docker inspect time-tracking --format "ExitCode={{.State.ExitCode}} OOMKilled={{.State.OOMKilled}} Error={{.State.Error}} FinishedAt={{.State.FinishedAt}}";
+            docker inspect time-tracking --format "{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}";
+            docker inspect time-tracking --format "{{range .NetworkSettings.Ports}}{{.}}{{end}}" ;
+            docker port time-tracking 2>/dev/null || echo "no published ports (container stopped)";
+          '
