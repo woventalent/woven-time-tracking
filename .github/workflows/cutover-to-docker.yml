@@ -27,6 +27,7 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
             # Stop the empty-DB container first so nothing else touches this volume mid-copy.
+            # PM2 is untouched here — it keeps serving on 3007 while we prepare Docker on 3002.
             docker stop woven-time-tracking 2>/dev/null || echo "already stopped / not found";
 
             echo "=== volume contents before seeding ===";
@@ -42,20 +43,12 @@ jobs:
             docker run --rm -v time-tracking_db-data:/data alpine ls -la /data;
           '
 
-      - name: Stop PM2 woven-time-tracking (full decommission per architecture migration)
-        run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
-            pm2 delete woven-time-tracking || echo "pm2 process not found / already stopped";
-            pm2 save || true;
-            pm2 list;
-          '
-
-      - name: Bring up the Docker container with the seeded (real) data
+      - name: Bring up the Docker container with the seeded (real) data — PM2 still serving live traffic on 3007
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} \
             "cd /var/www/time-tracking && docker compose up -d --build --remove-orphans"
 
-      - name: Wait for healthy and verify real data is being served (directly on 3002, Caddy not touched yet)
+      - name: Wait for healthy and verify real data on 3002 (PM2 on 3007 is unaffected either way)
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
             for i in $(seq 1 24); do
@@ -73,11 +66,11 @@ jobs:
             echo "=== direct health check on container port 3002 ===";
             curl -s http://localhost:3002/api/health; echo
 
-            echo "=== port 3007 (PM2, should now be free) ===";
-            (ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null) | grep ":3007\b" || echo "3007 is free (PM2 stopped)";
+            echo "=== PM2 status (should still be untouched, online) ===";
+            pm2 list;
           '
 
-      - name: "Row counts inside the now-live Docker volume (should match PM2 - 21 projects, 31 entries)"
+      - name: "Row counts on port 3002 volume (should match PM2 - 21 projects, 31 entries)"
         run: |
           cat > /tmp/inspect_db.js << 'EOF'
           const { DatabaseSync } = require('node:sqlite')
@@ -94,3 +87,12 @@ jobs:
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
             docker run --rm -v time-tracking_db-data:/data:ro -v /tmp/inspect_db.js:/inspect.js:ro node:22-alpine node --experimental-sqlite /inspect.js /data/timetracking.db
           '
+
+      - name: STOP — do not proceed automatically
+        run: |
+          echo "Docker container is up on port 3002 and verified above."
+          echo "PM2 is still running on 3007 and still serving https://time.woventalent.in — nothing has changed for real users yet."
+          echo "Next steps (separate, deliberate follow-ups after reviewing this run's output):"
+          echo "  1. Confirm the row counts above genuinely match PM2's real data."
+          echo "  2. Run the 'Stop PM2' workflow to decommission PM2 once confirmed."
+          echo "  3. Repoint Caddy from 172.18.0.1:3007 to 172.18.0.1:3002 and reload."
