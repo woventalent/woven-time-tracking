@@ -1,0 +1,32 @@
+name: Find which Caddyfile actually has time.woventalent.in
+
+on:
+  workflow_dispatch:
+
+jobs:
+  find:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Check each candidate file individually
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            for f in /opt/plane-deploy/plane-app/Caddyfile /tmp/Caddyfile.current /tmp/Caddyfile.new /tmp/Caddyfile_updated /tmp/Caddyfile.orig; do
+              echo "--- $f ---";
+              if [ -f "$f" ]; then
+                grep -A2 "time.woventalent.in" "$f" || echo "(no match in this file)";
+              else
+                echo "(file does not exist)";
+              fi
+              echo;
+            done
+
+            echo "=== full contents of /opt/plane-deploy/plane-app/Caddyfile ===";
+            cat /opt/plane-deploy/plane-app/Caddyfile;
+          ' || true
