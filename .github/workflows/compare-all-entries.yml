@@ -1,0 +1,57 @@
+name: Compare ALL timesheet entries between the two databases
+
+on:
+  workflow_dispatch:
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Write full-dump script
+        run: |
+          cat > /tmp/dump_entries.js << 'EOF'
+          const { DatabaseSync } = require('node:sqlite')
+          const path = process.argv[2]
+          const db = new DatabaseSync(path, { readOnly: true })
+          const rows = db.prepare(`
+            SELECT u.name AS user_name, p.project_code, te.date, te.hours, te.description
+            FROM timesheet_entries te
+            JOIN users u ON u.id = te.user_id
+            LEFT JOIN projects p ON p.id = te.project_id
+            ORDER BY u.name, te.date
+          `).all()
+          for (const r of rows) {
+            const key = [r.user_name, r.project_code, r.date, r.hours, (r.description||'').trim()].join('|')
+            console.log(key)
+          }
+          EOF
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes /tmp/dump_entries.js root@${{ secrets.SSH_HOST }}:/tmp/dump_entries.js
+
+      - name: Dump both databases to comparable files
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            docker run --rm -v time-tracking_db-data:/data:ro -v /tmp/dump_entries.js:/d.js:ro node:22-alpine node --experimental-sqlite /d.js /data/timetracking.db > /tmp/prod_entries.txt 2>/tmp/prod_err.txt
+            docker run --rm -v /opt/alternative-ens-deployment/time-tracking/data:/data:ro -v /tmp/dump_entries.js:/d.js:ro node:22-alpine node --experimental-sqlite /d.js /data/timetracking.db > /tmp/misplaced_entries.txt 2>/tmp/misplaced_err.txt
+            echo "prod count: $(wc -l < /tmp/prod_entries.txt)"
+            echo "misplaced count: $(wc -l < /tmp/misplaced_entries.txt)"
+          '
+
+      - name: Diff the two entry sets
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            echo "=== entries ONLY in PRODUCTION (would be lost if we just swap to the misplaced copy) ===";
+            comm -23 <(sort /tmp/prod_entries.txt) <(sort /tmp/misplaced_entries.txt) || echo "(none — production is a strict subset)";
+            echo;
+            echo "=== count of entries ONLY in the misplaced copy (need migrating in) ===";
+            comm -13 <(sort /tmp/prod_entries.txt) <(sort /tmp/misplaced_entries.txt) | wc -l;
+            echo;
+            echo "=== sample of entries only in the misplaced copy ===";
+            comm -13 <(sort /tmp/prod_entries.txt) <(sort /tmp/misplaced_entries.txt) | head -20;
+          '
