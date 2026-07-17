@@ -1,0 +1,218 @@
+name: Migrate missing entries (incl. Danial K) directly into the LIVE PM2 database
+
+on:
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Confirm current gap on the LIVE PM2 db (read-only, before any change)
+        run: |
+          cat > /tmp/check.js << 'EOF'
+          const { DatabaseSync } = require('node:sqlite')
+          const db = new DatabaseSync('/data/timetracking.db', { readOnly: true })
+          for (const t of ['users', 'workspaces', 'projects', 'timesheet_entries']) {
+            console.log(t + ': ' + db.prepare('SELECT COUNT(*) AS c FROM ' + t).get().c)
+          }
+          const danial = db.prepare("SELECT id FROM users WHERE name = 'Danial K'").get()
+          const n = danial ? db.prepare('SELECT COUNT(*) AS c FROM timesheet_entries WHERE user_id = ?').get(danial.id).c : 'user not found'
+          console.log('Danial K entries: ' + n)
+          EOF
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes /tmp/check.js root@${{ secrets.SSH_HOST }}:/tmp/check.js
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            docker run --rm -v /var/www/time-tracking/timetracking.db:/data/timetracking.db:ro -v /tmp/check.js:/c.js:ro node:22-alpine node --experimental-sqlite /c.js
+          '
+
+      - name: Backup the LIVE PM2 db before writing to it
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            mkdir -p /root/pm2-to-docker-backup
+            cp /var/www/time-tracking/timetracking.db /root/pm2-to-docker-backup/timetracking.db.livePM2.preMigration.$(date +%s).bak
+            ls -la /root/pm2-to-docker-backup/
+          '
+
+      - name: Write migration script
+        run: |
+          cat > /tmp/migrate.js << 'EOF'
+          const { DatabaseSync } = require('node:sqlite')
+          const src = new DatabaseSync('/src/timetracking.db', { readOnly: true })
+          const dest = new DatabaseSync('/dest/timetracking.db')
+          dest.exec('PRAGMA foreign_keys = ON')
+
+          function mapBy(db, table, keyFn) {
+            const m = new Map()
+            for (const row of db.prepare(`SELECT * FROM ${table}`).all()) m.set(keyFn(row), row)
+            return m
+          }
+
+          const destWorkspaces = mapBy(dest, 'workspaces', r => r.slug)
+          const destProjectTypes = mapBy(dest, 'project_types', r => r.workspace_id + ':' + r.name)
+          const destClients = mapBy(dest, 'clients', r => r.workspace_id + ':' + r.name)
+          const destRequestors = mapBy(dest, 'requestors', r => r.workspace_id + ':' + r.email)
+          const destUsers = mapBy(dest, 'users', r => r.email)
+          const destProjects = mapBy(dest, 'projects', r => r.project_code)
+
+          const srcProjects = src.prepare(`
+            SELECT p.*, w.slug AS ws_slug,
+                   pt.name AS pt_name, pt.color AS pt_color, pt.active AS pt_active, pt.description AS pt_desc,
+                   c.name AS client_name,
+                   r.email AS req_email, r.name AS req_name, r.active AS req_active
+            FROM projects p
+            LEFT JOIN workspaces w ON w.id = p.workspace_id
+            LEFT JOIN project_types pt ON pt.id = p.project_type_id
+            LEFT JOIN clients c ON c.id = p.client_id
+            LEFT JOIN requestors r ON r.id = p.requestor_id
+          `).all()
+
+          let projectsInserted = 0, typesInserted = 0, clientsInserted = 0, requestorsInserted = 0
+
+          for (const sp of srcProjects) {
+            if (destProjects.has(sp.project_code)) continue
+
+            const ws = destWorkspaces.get(sp.ws_slug)
+            if (!ws) { console.log('SKIP project ' + sp.project_code + ' — workspace ' + sp.ws_slug + ' not found in dest'); continue }
+
+            let projectTypeId = null
+            if (sp.pt_name) {
+              const key = ws.id + ':' + sp.pt_name
+              let pt = destProjectTypes.get(key)
+              if (!pt) {
+                dest.prepare('INSERT INTO project_types (workspace_id, name, color, active, description) VALUES (?, ?, ?, ?, ?)')
+                  .run(ws.id, sp.pt_name, sp.pt_color, sp.pt_active, sp.pt_desc)
+                const id = dest.prepare('SELECT last_insert_rowid() AS id').get().id
+                pt = { id }
+                destProjectTypes.set(key, pt)
+                typesInserted++
+              }
+              projectTypeId = pt.id
+            }
+
+            let clientId = null
+            if (sp.client_name) {
+              const key = ws.id + ':' + sp.client_name
+              let cl = destClients.get(key)
+              if (!cl) {
+                dest.prepare('INSERT INTO clients (workspace_id, name) VALUES (?, ?)').run(ws.id, sp.client_name)
+                const id = dest.prepare('SELECT last_insert_rowid() AS id').get().id
+                cl = { id }
+                destClients.set(key, cl)
+                clientsInserted++
+              }
+              clientId = cl.id
+            }
+
+            let requestorId = null
+            if (sp.req_email) {
+              const key = ws.id + ':' + sp.req_email
+              let rq = destRequestors.get(key)
+              if (!rq) {
+                dest.prepare('INSERT INTO requestors (workspace_id, name, email, active) VALUES (?, ?, ?, ?)')
+                  .run(ws.id, sp.req_name, sp.req_email, sp.req_active)
+                const id = dest.prepare('SELECT last_insert_rowid() AS id').get().id
+                rq = { id }
+                destRequestors.set(key, rq)
+                requestorsInserted++
+              }
+              requestorId = rq.id
+            }
+
+            dest.prepare(`
+              INSERT INTO projects
+                (workspace_id, project_code, name, project_type_id, request_date, requestor_id, client_id,
+                 budgeted_hours, status, description, report_initiated, report_delivered)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(ws.id, sp.project_code, sp.name, projectTypeId, sp.request_date, requestorId, clientId,
+                    sp.budgeted_hours, sp.status, sp.description, sp.report_initiated, sp.report_delivered)
+            const newId = dest.prepare('SELECT last_insert_rowid() AS id').get().id
+            destProjects.set(sp.project_code, { id: newId })
+            projectsInserted++
+            console.log('Inserted project ' + sp.project_code + ' -> dest id ' + newId)
+          }
+
+          const srcEntries = src.prepare(`
+            SELECT te.*, u.email AS user_email, p.project_code AS project_code
+            FROM timesheet_entries te
+            JOIN users u ON u.id = te.user_id
+            JOIN projects p ON p.id = te.project_id
+          `).all()
+
+          const existingKeys = new Set(
+            dest.prepare(`
+              SELECT u.email AS user_email, p.project_code AS project_code, te.date, te.hours, te.description
+              FROM timesheet_entries te
+              JOIN users u ON u.id = te.user_id
+              JOIN projects p ON p.id = te.project_id
+            `).all().map(r => [r.user_email, r.project_code, r.date, r.hours, (r.description||'').trim()].join('|'))
+          )
+
+          let entriesInserted = 0, entriesSkippedNoUser = 0, entriesSkippedNoProject = 0
+          for (const se of srcEntries) {
+            const key = [se.user_email, se.project_code, se.date, se.hours, (se.description||'').trim()].join('|')
+            if (existingKeys.has(key)) continue
+
+            const u = destUsers.get(se.user_email)
+            if (!u) { entriesSkippedNoUser++; console.log('SKIP entry — user ' + se.user_email + ' not found in dest'); continue }
+            const p = destProjects.get(se.project_code)
+            if (!p) { entriesSkippedNoProject++; console.log('SKIP entry — project ' + se.project_code + ' not found in dest'); continue }
+
+            dest.prepare('INSERT INTO timesheet_entries (project_id, user_id, date, hours, description) VALUES (?, ?, ?, ?, ?)')
+              .run(p.id, u.id, se.date, se.hours, se.description)
+            entriesInserted++
+          }
+
+          console.log('--- migration summary ---')
+          console.log('project_types inserted: ' + typesInserted)
+          console.log('clients inserted: ' + clientsInserted)
+          console.log('requestors inserted: ' + requestorsInserted)
+          console.log('projects inserted: ' + projectsInserted)
+          console.log('timesheet_entries inserted: ' + entriesInserted)
+          console.log('entries skipped (no matching user): ' + entriesSkippedNoUser)
+          console.log('entries skipped (no matching project): ' + entriesSkippedNoProject)
+
+          console.log('--- post-migration counts ---')
+          for (const t of ['users', 'workspaces', 'projects', 'timesheet_entries']) {
+            console.log(t + ': ' + dest.prepare('SELECT COUNT(*) AS c FROM ' + t).get().c)
+          }
+          const danial = dest.prepare("SELECT id FROM users WHERE name = 'Danial K'").get()
+          const n = danial ? dest.prepare('SELECT COUNT(*) AS c FROM timesheet_entries WHERE user_id = ?').get(danial.id).c : 'user not found'
+          console.log('Danial K entries: ' + n)
+          EOF
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes /tmp/migrate.js root@${{ secrets.SSH_HOST }}:/tmp/migrate.js
+
+      - name: Stop PM2 app briefly, run migration against the live db file, restart PM2
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            pm2 stop woven-time-tracking
+          '
+
+      - name: Run the migration
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            docker run --rm \
+              -v /opt/alternative-ens-deployment/time-tracking/data:/src:ro \
+              -v /var/www/time-tracking/timetracking.db:/dest/timetracking.db \
+              -v /tmp/migrate.js:/tmp/migrate.js:ro \
+              node:22-alpine node --experimental-sqlite /tmp/migrate.js
+          '
+
+      - name: Restart PM2
+        if: always()
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            pm2 start woven-time-tracking || pm2 restart woven-time-tracking
+            pm2 status
+          '
+
+      - name: Verify live site now serves the migrated data
+        run: |
+          sleep 3
+          echo "=== live /api/health ==="
+          curl -s https://time.woventalent.in/api/health --max-time 15; echo
