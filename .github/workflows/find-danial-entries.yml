@@ -1,0 +1,56 @@
+name: Find Danial K entries in both databases
+
+on:
+  workflow_dispatch:
+
+jobs:
+  find:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Write comparison script
+        run: |
+          cat > /tmp/find_danial.js << 'EOF'
+          const { DatabaseSync } = require('node:sqlite')
+          const path = process.argv[2]
+          const label = process.argv[3]
+          const db = new DatabaseSync(path, { readOnly: true })
+
+          console.log('=== ' + label + ' (' + path + ') ===')
+
+          const users = db.prepare("SELECT id, name, email FROM users WHERE name LIKE '%danial%' OR name LIKE '%daniel%' COLLATE NOCASE").all()
+          console.log('Matching users:', JSON.stringify(users))
+
+          for (const u of users) {
+            const entries = db.prepare(`
+              SELECT te.id, te.date, te.hours, te.description, p.project_code, p.name AS project_name
+              FROM timesheet_entries te
+              LEFT JOIN projects p ON p.id = te.project_id
+              WHERE te.user_id = ?
+              ORDER BY te.date
+            `).all(u.id)
+            console.log('Entries for ' + u.name + ' (' + entries.length + '):')
+            for (const e of entries) {
+              console.log('  ' + e.date + ' | ' + (e.project_code || '?') + ' ' + (e.project_name || '') + ' | ' + e.hours + 'h | ' + (e.description || ''))
+            }
+          }
+          EOF
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes /tmp/find_danial.js root@${{ secrets.SSH_HOST }}:/tmp/find_danial.js
+
+      - name: Check production (Docker volume, ex-PM2 data)
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            docker run --rm -v time-tracking_db-data:/data:ro -v /tmp/find_danial.js:/f.js:ro node:22-alpine node --experimental-sqlite /f.js /data/timetracking.db "PRODUCTION (Docker/ex-PM2)"
+          '
+
+      - name: Check the misplaced alternative-ens-deployment copy
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            docker run --rm -v /opt/alternative-ens-deployment/time-tracking/data:/data:ro -v /tmp/find_danial.js:/f.js:ro node:22-alpine node --experimental-sqlite /f.js /data/timetracking.db "MISPLACED COPY (alternative-ens-deployment)"
+          '
