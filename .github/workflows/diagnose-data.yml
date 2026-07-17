@@ -64,6 +64,28 @@ jobs:
             done
           '
 
+      - name: Current live status (containers, ports, PM2, Caddy target)
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            echo "=== containers right now ===";
+            docker ps -a --filter "name=time-tracking" --format "{{.ID}}  {{.Names}}  {{.Status}}  {{.Ports}}";
+            echo;
+            echo "=== what is listening on 3002, 3007, 3000 on the HOST (outside docker) ===";
+            (ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null) | grep -E ":(3002|3007|3000)\b" || echo "nothing found via ss/netstat";
+            echo;
+            echo "=== is PM2 running at all? ===";
+            pm2 list 2>/dev/null || echo "pm2 not installed or not running";
+            echo;
+            echo "=== time-tracking container env (DB_PATH, PORT) ===";
+            docker inspect time-tracking --format "{{range .Config.Env}}{{println .}}{{end}}" 2>/dev/null | grep -iE "db_path|port" || echo "not found";
+            echo;
+            echo "=== time-tracking container recent logs ===";
+            docker logs --tail 60 time-tracking 2>&1 || echo "no logs";
+            echo;
+            echo "=== Caddyfile (wherever it lives) ===";
+            find / -xdev -iname "Caddyfile*" -not -path "*/var/lib/docker/*" 2>/dev/null -exec echo "--- {} ---" \; -exec cat {} \; 2>/dev/null | grep -B2 -A2 -i "woventalent\|time-tracking\|300[0-9]" || echo "no Caddyfile match found";
+          '
+
       - name: Row counts for host .db files found (PM2-era + alternative-ens-deployment)
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
