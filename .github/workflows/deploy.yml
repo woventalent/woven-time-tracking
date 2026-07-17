@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build frontend
+      - name: Build frontend (CI sanity check — the Docker image builds its own)
         run: npm run build
 
       - name: Set up SSH
@@ -36,6 +36,7 @@ jobs:
         run: |
           rsync -avz --delete \
             --exclude node_modules \
+            --exclude dist \
             --exclude '*.db' \
             --exclude '*.db-shm' \
             --exclude '*.db-wal' \
@@ -46,7 +47,26 @@ jobs:
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes" \
             ./ root@${{ secrets.SSH_HOST }}:/var/www/time-tracking/
 
-      - name: Install production dependencies & restart
+      - name: Build and restart the app container
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} \
-            "cd /var/www/time-tracking && npm install --omit=dev --silent && (pm2 restart woven-time-tracking --update-env || pm2 start ecosystem.config.cjs) && pm2 save"
+            "cd /var/www/time-tracking && docker compose up -d --build --remove-orphans"
+
+      - name: Wait for the container to report healthy
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            for i in $(seq 1 24); do
+              status=$(docker inspect --format="{{.State.Health.Status}}" woven-time-tracking 2>/dev/null || echo "starting")
+              echo "health check $i/24: $status"
+              if [ "$status" = "healthy" ]; then exit 0; fi
+              if [ "$status" = "unhealthy" ]; then
+                echo "--- container logs ---"
+                docker logs --tail 100 woven-time-tracking
+                exit 1
+              fi
+              sleep 5
+            done
+            echo "Timed out waiting for a healthy status"
+            docker logs --tail 100 woven-time-tracking
+            exit 1
+          '

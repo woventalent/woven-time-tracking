@@ -69,7 +69,7 @@ npm start
 
 The server serves the compiled `dist/` and all `/api/*` routes from a single Express process.
 
-### Docker (recommended)
+### Docker (production)
 
 The app ships with a multi-stage `Dockerfile` and a `docker-compose.yml` that runs the app plus an [`autoheal`](https://github.com/willfarrell/docker-autoheal) sidecar, so the service comes back on its own whether it crashes outright or just goes unresponsive:
 
@@ -84,13 +84,15 @@ docker compose logs -f app        # tail logs
 docker compose ps                 # check health status
 ```
 
-The container listens on `3000` internally and is published on host port `3002` — deliberately *not* `3001`, the port PM2 binds (see [PM2 & Caddy](#pm2--caddy) below). Docker and PM2 are two independent deployment paths for the same app; running both on the same host is only safe because they no longer share a port. **Never repoint `ports:` back to `3001:3000` while PM2 also manages this app** — an earlier version of this file did exactly that, and the resulting port fight sent PM2's process into a crash-restart loop on production (see #103).
+The container listens on `3000` internally and is published on host port `3002`. Caddy's `reverse_proxy` on production points at `172.18.0.1:3002` (see [Caddy](#caddy) below). **Do not repoint `ports:` to `3001:3000`** — `3001` is the port the legacy PM2 setup binds, and an earlier version of this file did exactly that; the resulting port fight sent PM2's process into a crash-restart loop on production (see #103). PM2 is not expected to be running on the production host anymore, but the port stays reserved as a guardrail in case it's ever brought back as a fallback.
 
-**Migrating an existing PM2 deployment to Docker:** stop and remove the PM2 process first — `pm2 delete woven-time-tracking` — then run `docker compose up -d --build` from `/var/www/time-tracking`, and update Caddy's `reverse_proxy` target from `172.18.0.1:3001` to `172.18.0.1:3002` (see [Caddy](#caddy) below). The SQLite DB isn't shared automatically; if you want to carry over existing data, copy the old `timetracking.db` and `uploads/` into the new named volumes before first start (e.g. `docker run --rm -v woven-time-tracking_db-data:/data -v /var/www/time-tracking:/old alpine cp /old/timetracking.db /data/timetracking.db`, similarly for `uploads-data`).
+**Production deployment (current):** the GitHub Actions workflow (`.github/workflows/deploy.yml`) deploys automatically on every push to `main` — it rsyncs the repo to `/var/www/time-tracking/` on the server, runs `docker compose up -d --build --remove-orphans`, and then polls `docker inspect`'s health status until the container reports `healthy` (failing the workflow and dumping the last 100 log lines if it doesn't within ~2 minutes). No manual steps are needed for a normal deploy — just push to `main`.
 
-> The GitHub Actions deploy workflow (`.github/workflows/deploy.yml`) still deploys via rsync + PM2. Switch it to `docker compose up -d --build` only once Docker is confirmed installed on the production host **and** Caddy has been repointed to port `3002` — otherwise the next automated deploy will fail outright, and testing `docker compose up` manually against the production host beforehand risks the same port-collision crash loop as #103 if PM2 isn't stopped first.
+**Migrating an existing PM2 deployment to Docker (already done in production, kept here for reference):** stop and remove the PM2 process first — `pm2 delete woven-time-tracking` — then run `docker compose up -d --build` from `/var/www/time-tracking`, and update Caddy's `reverse_proxy` target from `172.18.0.1:3001` to `172.18.0.1:3002` (see [Caddy](#caddy) below). The SQLite DB isn't shared automatically; to carry over existing data, copy the old `timetracking.db` and `uploads/` into the new named volumes before first start (e.g. `docker run --rm -v woven-time-tracking_db-data:/data -v /var/www/time-tracking:/old alpine cp /old/timetracking.db /data/timetracking.db`, similarly for `uploads-data`).
 
-### Deploying to the server (PM2, legacy)
+### Deploying to the server (PM2, legacy fallback)
+
+Only needed if Docker is unavailable on the host and you must fall back to the pre-Docker deployment path — production no longer runs this by default.
 
 ```bash
 # Sync server files
@@ -130,9 +132,9 @@ If `AZURE_CLIENT_ID` is not set, the app falls back to a dev-login form.
 
 ## PM2 & Caddy
 
-### PM2 (`ecosystem.config.cjs`)
+### PM2 (`ecosystem.config.cjs`) — legacy fallback
 
-The PM2 config reads `.env` at startup and passes all variables to the Node process:
+Production runs on Docker (see [Docker (production)](#docker-production) above); PM2 is kept only as a manual fallback if Docker is ever unavailable on the host. The PM2 config reads `.env` at startup and passes all variables to the Node process:
 
 ```bash
 pm2 delete woven-time-tracking   # needed after env changes
@@ -148,18 +150,20 @@ node_args: '--experimental-sqlite'
 
 ### Caddy
 
-Add to your Caddyfile:
+Production's Caddyfile points at the Docker container's published port, `3002`:
 
 ```
 your-production-domain.example.com {
-    reverse_proxy 172.18.0.1:3001
+    reverse_proxy 172.18.0.1:3002
 }
 ```
 
-If Caddy runs inside Docker, allow the Docker subnet through the firewall:
+If falling back to the legacy PM2 path, repoint this at `172.18.0.1:3001` instead (PM2's port) — the two paths must never run against the same port at the same time (see [Docker (production)](#docker-production) above and #103).
+
+If Caddy runs inside Docker, allow the Docker subnet through the firewall for whichever port is in use:
 
 ```bash
-ufw allow from 172.18.0.0/16 to any port 3001
+ufw allow from 172.18.0.0/16 to any port 3002
 ```
 
 Reload Caddy after editing the Caddyfile.
@@ -194,8 +198,9 @@ Reload Caddy after editing the Caddyfile.
 ├── index.html
 ├── vite.config.js
 ├── Dockerfile                # Multi-stage build (frontend build + production runtime)
-├── docker-compose.yml        # App + autoheal, persistent DB/uploads volumes
-├── ecosystem.config.cjs      # PM2 config (legacy alternative to Docker)
+├── docker-compose.yml        # App + autoheal, persistent DB/uploads volumes — current production deployment
+├── ecosystem.config.cjs      # PM2 config (legacy fallback, not used in production)
+├── .github/workflows/deploy.yml  # Deploys to Docker on the production host on every push to main
 ├── .env.example
 └── package.json
 ```

@@ -1,8 +1,8 @@
-# deploy.yml still deploys via PM2, not this file (see README's "Docker" section).
-# PM2 binds host port 3001. Do NOT publish this container on 3001 while PM2 is
-# also running the app — the two will fight over the port and PM2 will crash-loop
-# trying to rebind it (see issue #103). Stop PM2 (`pm2 delete woven-time-tracking`)
-# before ever running `docker compose up` against a host where PM2 manages this app.
+# Production now deploys via this file — deploy.yml runs `docker compose up -d --build`
+# on every push to main (see README's "Docker" section). PM2 (ecosystem.config.cjs) is
+# kept only as a legacy fallback and must not run against this host at the same time:
+# it binds host port 3001, and if both PM2 and this container were active they'd fight
+# over the port and PM2 would crash-loop trying to rebind it (see issue #103).
 services:
   app:
     build: .

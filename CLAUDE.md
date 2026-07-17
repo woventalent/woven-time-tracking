@@ -3,7 +3,7 @@
 ## Deployment
 
 - **Push directly to `main`** — no PRs needed. `main` is unprotected.
-- GitHub Actions (`deploy.yml`) deploys automatically on every push to `main` (~35s via SSH + rsync + PM2).
+- GitHub Actions (`deploy.yml`) deploys automatically on every push to `main`: rsyncs the repo to the production host, then runs `docker compose up -d --build` and waits for the container's health check to pass. Production runs in Docker (see `docker-compose.yml`) — PM2 (`ecosystem.config.cjs`) is a legacy fallback only, not used in normal deploys.
 - Production URL: not published here (this repo is public) — see the task/routine configuration or internal deployment docs for the live URL.
 
 ## Routine Workflow
