@@ -47,6 +47,20 @@ jobs:
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes" \
             ./ root@${{ secrets.SSH_HOST }}:/var/www/time-tracking/
 
+      - name: Free port 3002 if held by a container outside this Compose project
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            echo "Containers currently publishing 3002:"
+            docker ps --filter "publish=3002" --format "{{.ID}}  {{.Names}}  {{.Image}}"
+            stale=$(docker ps -q --filter "publish=3002")
+            if [ -n "$stale" ]; then
+              echo "Stopping container(s) holding port 3002 so this deploy can rebind it: $stale"
+              docker stop $stale
+            else
+              echo "Port 3002 is free."
+            fi
+          '
+
       - name: Build and restart the app container
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} \
