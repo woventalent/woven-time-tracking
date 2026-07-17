@@ -1,9 +1,14 @@
 name: Deploy to Production
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+  # push trigger temporarily disabled — this workflow deploys to
+  # /var/www/time-tracking, which turns out NOT to be the real production
+  # deployment. Production actually runs from a separate, independently-managed
+  # checkout at /opt/alternative-ens-deployment/time-tracking/. Re-enable
+  # `push: branches: [main]` only after deploy.yml is repointed at the correct
+  # path (or the two deployments are otherwise reconciled) — see the commit
+  # that disabled this trigger for the full incident writeup.
 
 jobs:
   deploy:
