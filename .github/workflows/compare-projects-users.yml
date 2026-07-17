@@ -1,0 +1,59 @@
+name: Compare projects, users, workspaces between the two databases
+
+on:
+  workflow_dispatch:
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Write dump script
+        run: |
+          cat > /tmp/dump_meta.js << 'EOF'
+          const { DatabaseSync } = require('node:sqlite')
+          const path = process.argv[2]
+          const db = new DatabaseSync(path, { readOnly: true })
+          console.log('--- projects ---')
+          for (const r of db.prepare('SELECT project_code, name, status FROM projects ORDER BY project_code').all()) {
+            console.log([r.project_code, r.name, r.status].join('|'))
+          }
+          console.log('--- users ---')
+          for (const r of db.prepare('SELECT name, email FROM users ORDER BY email').all()) {
+            console.log([r.name, r.email].join('|'))
+          }
+          console.log('--- workspaces ---')
+          for (const r of db.prepare('SELECT name, slug FROM workspaces ORDER BY slug').all()) {
+            console.log([r.name, r.slug].join('|'))
+          }
+          console.log('--- clients ---')
+          for (const r of db.prepare('SELECT name FROM clients ORDER BY name').all()) {
+            console.log(r.name)
+          }
+          EOF
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes /tmp/dump_meta.js root@${{ secrets.SSH_HOST }}:/tmp/dump_meta.js
+
+      - name: Dump and diff
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            docker run --rm -v time-tracking_db-data:/data:ro -v /tmp/dump_meta.js:/d.js:ro node:22-alpine node --experimental-sqlite /d.js /data/timetracking.db > /tmp/prod_meta.txt 2>/dev/null
+            docker run --rm -v /opt/alternative-ens-deployment/time-tracking/data:/data:ro -v /tmp/dump_meta.js:/d.js:ro node:22-alpine node --experimental-sqlite /d.js /data/timetracking.db > /tmp/misplaced_meta.txt 2>/dev/null
+
+            echo "=== PRODUCTION ===";
+            cat /tmp/prod_meta.txt;
+            echo;
+            echo "=== MISPLACED COPY ===";
+            cat /tmp/misplaced_meta.txt;
+            echo;
+            echo "=== lines in PRODUCTION not in MISPLACED (would be lost on a straight replace) ===";
+            comm -23 <(sort /tmp/prod_meta.txt) <(sort /tmp/misplaced_meta.txt) || echo "(none)";
+            echo;
+            echo "=== lines in MISPLACED not in PRODUCTION ===";
+            comm -13 <(sort /tmp/prod_meta.txt) <(sort /tmp/misplaced_meta.txt) || echo "(none)";
+          '
