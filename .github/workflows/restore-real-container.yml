@@ -1,0 +1,52 @@
+name: Restore Real Production Container
+
+on:
+  workflow_dispatch:
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Stop the wrong (empty-DB) container and start the real one
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            echo "=== configured port bindings for the real time-tracking container ===";
+            docker inspect time-tracking --format "{{.HostConfig.PortBindings}}";
+
+            echo;
+            echo "=== stopping woven-time-tracking (wrong, empty DB) to free its port ===";
+            docker stop woven-time-tracking || echo "already stopped / not found";
+
+            echo;
+            echo "=== starting the real time-tracking container (alternative-ens-deployment) ===";
+            docker start time-tracking;
+
+            echo;
+            echo "=== waiting for it to report healthy ===";
+            for i in $(seq 1 24); do
+              status=$(docker inspect --format="{{.State.Health.Status}}" time-tracking 2>/dev/null || echo "starting");
+              echo "health check $i/24: $status";
+              if [ "$status" = "healthy" ]; then break; fi;
+              sleep 5;
+            done;
+
+            echo;
+            echo "=== final container status ===";
+            docker ps --filter "name=time-tracking" --filter "name=woven-time-tracking" --format "{{.ID}}  {{.Names}}  {{.Status}}  {{.Ports}}";
+          '
+
+      - name: Verify real data is being served
+        run: |
+          sleep 5
+          echo "=== /api/health ==="
+          curl -s http://${{ secrets.SSH_HOST }}:3002/api/health || echo "curl failed"
+          echo
+          echo "=== production site via public URL ==="
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" https://time.woventalent.in/ || echo "curl failed"
