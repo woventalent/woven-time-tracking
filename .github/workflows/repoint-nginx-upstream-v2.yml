@@ -1,0 +1,82 @@
+name: Repoint nginx-proxy upstream v2 (in-place edit, preserves bind-mount inode)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  repoint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Diagnose the previous attempt's inode mismatch (read-only)
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            echo "=== host file inode ===";
+            stat -c "inode=%i" /opt/alternative-ens-deployment/nginx.production.conf;
+            echo "=== container view inode (via exec) ===";
+            docker exec nginx-proxy stat -c "inode=%i" /etc/nginx/nginx.conf;
+            echo "=== host file current upstream line ===";
+            grep -A1 "upstream time_tracking" /opt/alternative-ens-deployment/nginx.production.conf;
+            echo "=== container-visible current upstream line ===";
+            docker exec nginx-proxy grep -A1 "upstream time_tracking" /etc/nginx/nginx.conf;
+          '
+
+      - name: Fix in place — truncate+write (preserves inode) instead of sed -i (which renames)
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            set -e
+            cp /opt/alternative-ens-deployment/nginx.production.conf /root/pm2-to-docker-backup/nginx.production.conf.bak.v2.$(date +%s)
+            sed "/upstream time_tracking {/,/}/ s/server 127\.0\.0\.1:[0-9]*;/server 127.0.0.1:3009;/" /opt/alternative-ens-deployment/nginx.production.conf > /tmp/nginx.production.conf.new
+            diff /opt/alternative-ens-deployment/nginx.production.conf /tmp/nginx.production.conf.new || true
+            cat /tmp/nginx.production.conf.new > /opt/alternative-ens-deployment/nginx.production.conf
+            echo "=== host file inode AFTER (should be unchanged from before) ===";
+            stat -c "inode=%i" /opt/alternative-ens-deployment/nginx.production.conf;
+            echo "=== updated line ===";
+            grep -A1 "upstream time_tracking" /opt/alternative-ens-deployment/nginx.production.conf;
+          '
+
+      - name: Confirm the CONTAINER now sees the updated content (before reloading)
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            echo "=== container-visible line, should now say 3009 ===";
+            docker exec nginx-proxy grep -A1 "upstream time_tracking" /etc/nginx/nginx.conf;
+          '
+
+      - name: Validate syntax, then reload
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            docker exec nginx-proxy nginx -t
+            docker exec nginx-proxy nginx -s reload
+          '
+
+      - name: THE REAL TEST — nginx -T inside the container after reload
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            docker exec nginx-proxy nginx -T 2>/dev/null | grep -A2 "upstream time_tracking"
+          '
+
+      - name: Deterministic proof — stop the Docker container briefly and confirm the public site breaks
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            docker stop woven-time-tracking
+          '
+          sleep 2
+          echo "=== public site WITH Docker container stopped (should now fail/error if nginx really points here) ===";
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" --max-time 10 https://time.woventalent.in/api/health || echo "(connection failed, as expected if pointed at Docker)"
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            docker start woven-time-tracking
+            for i in $(seq 1 24); do
+              status=$(docker inspect --format="{{.State.Health.Status}}" woven-time-tracking 2>/dev/null || echo "starting")
+              if [ "$status" = "healthy" ]; then echo "back to healthy"; break; fi
+              sleep 5
+            done
+          '
+          sleep 2
+          echo "=== public site WITH Docker container back up (should recover) ===";
+          curl -s --max-time 15 https://time.woventalent.in/api/health; echo
