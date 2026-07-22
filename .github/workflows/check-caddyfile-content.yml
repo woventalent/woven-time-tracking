@@ -1,0 +1,29 @@
+name: Check live Caddyfile content (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Full contents of the live Caddyfile, with line numbers, plus a case-insensitive search
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            echo "=== full contents (line-numbered) ===";
+            cat -n /opt/plane-deploy/plane-app/Caddyfile;
+            echo;
+            echo "=== case-insensitive grep for woventalent ===";
+            grep -in "woventalent" /opt/plane-deploy/plane-app/Caddyfile || echo "no match at all";
+            echo;
+            echo "=== byte count / md5 (sanity check its not empty/truncated) ===";
+            wc -l /opt/plane-deploy/plane-app/Caddyfile;
+            md5sum /opt/plane-deploy/plane-app/Caddyfile;
+          '
