@@ -14,62 +14,18 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
 
-      - name: Confirm host identity without leaking the secret
+      - name: Read the REAL nginx-proxy config and its live parsed state
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
-            myip=$(curl -s --max-time 10 https://ifconfig.me);
-            if [ "$myip" = "143.244.143.71" ]; then
-              echo "CONFIRMED: this host IS 143.244.143.71 (time.woventalent.in DNS target)";
-            else
-              echo "MISMATCH: this host is NOT the DNS target for time.woventalent.in — stop and re-investigate";
-            fi
-          '
-
-      - name: Inspect the mystery nginx-proxy container
-        run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
-            echo "=== nginx-proxy container details ===";
-            docker inspect nginx-proxy --format "Image: {{.Config.Image}}" ;
-            docker inspect nginx-proxy --format "Cmd: {{.Config.Cmd}}" ;
-            docker inspect nginx-proxy --format "Env: {{.Config.Env}}" ;
-            echo "--- port bindings ---";
-            docker inspect nginx-proxy --format "{{.HostConfig.PortBindings}}";
-            docker port nginx-proxy 2>/dev/null || echo "no published ports";
-            echo "--- mounts ---";
-            docker inspect nginx-proxy --format "{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}";
-            echo "--- networks ---";
-            docker inspect nginx-proxy --format "{{range \$k,\$v := .NetworkSettings.Networks}}{{\$k}}: {{\$v.IPAddress}}{{println}}{{end}}";
+            echo "=== full contents of the real source config (line-numbered) ===";
+            cat -n /opt/alternative-ens-deployment/nginx.production.conf;
             echo;
-            echo "=== is nginx-proxy on the same docker network as woven-time-tracking? ===";
-            docker inspect woven-time-tracking --format "{{range \$k,\$v := .NetworkSettings.Networks}}{{\$k}}: {{\$v.IPAddress}}{{println}}{{end}}";
+            echo "=== the time.woventalent.in block specifically, from the running containers own nginx -T ===";
+            docker exec nginx-proxy nginx -T 2>/dev/null | awk "/server_name[^;]*time\.woventalent\.in/{f=1} f{print} f&&/^}/{f=0; print \"---\"}";
             echo;
-            echo "=== full docker network list ===";
-            docker network ls;
-          '
-
-      - name: Get real cmdline for each of the 3 nginx master processes (via /proc)
-        run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
-            for pid in $(pgrep -f "nginx: master process"); do
-              echo "--- PID $pid ---";
-              cat -A /proc/$pid/cmdline 2>/dev/null | tr "\0" " "; echo;
-              echo "cwd: $(readlink -f /proc/$pid/cwd 2>/dev/null)";
-              echo "exe: $(readlink -f /proc/$pid/exe 2>/dev/null)";
-              cat /proc/$pid/cgroup 2>/dev/null | head -3;
-              echo;
-            done
-          '
-
-      - name: Fingerprint each candidate backend and compare to the public response
-        run: |
-          echo "=== public response (via HTTPS, real DNS) ===";
-          PUBLIC=$(curl -s --max-time 15 https://time.woventalent.in/);
-          echo "$PUBLIC" | head -c 400; echo; echo "[len: ${#PUBLIC}]";
-          echo;
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
-            for port in 3007 3002 8000 3000 3001; do
-              echo "--- localhost:$port / ---";
-              curl -s --max-time 5 http://localhost:$port/ | head -c 200 || echo "(no response / connection refused)";
-              echo; echo;
-            done
+            echo "=== nginx -t inside the real container (config syntax check, read-only) ===";
+            docker exec nginx-proxy nginx -t 2>&1;
+            echo;
+            echo "=== is there also a prism.woventalent.in block, for comparison? ===";
+            grep -n -A15 "prism.woventalent.in" /opt/alternative-ens-deployment/nginx.production.conf | head -25;
           '
