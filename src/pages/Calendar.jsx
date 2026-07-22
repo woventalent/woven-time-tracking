@@ -3,6 +3,12 @@ import { api } from '../api.js'
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
+const STATUS_STYLES = {
+  delivered: { bg: '#f0fdf4', fg: '#16a34a' },
+  upcoming:  { bg: '#eff6ff', fg: '#2563eb' },
+  overdue:   { bg: '#fef2f2', fg: '#ef4444' },
+}
+
 function toDateKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
@@ -34,7 +40,8 @@ export default function Calendar() {
     for (const p of projects) {
       if (!p.report_delivered) continue
       const key = p.report_delivered
-      const entry = { id: p.id, name: p.name, client: p.client_name, future: key > todayKey }
+      const status = p.status === 'completed' ? 'delivered' : key > todayKey ? 'upcoming' : 'overdue'
+      const entry = { id: p.id, name: p.name, client: p.client_name, status }
       ;(map[key] ||= []).push(entry)
     }
     return map
@@ -66,6 +73,7 @@ export default function Calendar() {
       <div style={{ display: 'flex', gap: 16, marginBottom: 14, fontSize: 12.5, color: '#64748b' }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Dot color="#16a34a" /> Delivered</span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Dot color="#2563eb" /> Upcoming</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Dot color="#ef4444" /> Overdue</span>
       </div>
 
       <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
@@ -94,7 +102,7 @@ export default function Calendar() {
                   {items.map(it => (
                     <div key={it.id} title={`${it.name} — ${it.client || 'No client'}`} style={{
                       fontSize: 11, padding: '3px 6px', borderRadius: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      background: it.future ? '#eff6ff' : '#f0fdf4', color: it.future ? '#2563eb' : '#16a34a', fontWeight: 600,
+                      background: STATUS_STYLES[it.status].bg, color: STATUS_STYLES[it.status].fg, fontWeight: 600,
                     }}>
                       {it.name}{it.client ? ` · ${it.client}` : ''}
                     </div>
