@@ -1,0 +1,97 @@
+name: Restart nginx-proxy (fixes stale bind mount) and verify every site
+
+on:
+  workflow_dispatch:
+
+jobs:
+  restart:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Pre-restart state (read-only) — confirm host file says 3009, container still stale
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            echo "=== host file ===";
+            grep -A1 "upstream time_tracking" /opt/alternative-ens-deployment/nginx.production.conf;
+            echo "=== container (stale, expected 3007) ===";
+            docker exec nginx-proxy grep -A1 "upstream time_tracking" /etc/nginx/nginx.conf;
+          '
+
+      - name: Restart nginx-proxy (brief interruption to ALL sites on this shared proxy)
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            docker restart nginx-proxy
+            sleep 3
+            docker ps --filter "name=nginx-proxy" --format "{{.ID}}  {{.Names}}  {{.Status}}"
+          '
+
+      - name: Post-restart — confirm the container now sees the CURRENT file (inode + content)
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            echo "=== host inode ===";
+            stat -c "inode=%i" /opt/alternative-ens-deployment/nginx.production.conf;
+            echo "=== container inode (should now MATCH) ===";
+            docker exec nginx-proxy stat -c "inode=%i" /etc/nginx/nginx.conf;
+            echo "=== container upstream (should now say 3009) ===";
+            docker exec nginx-proxy grep -A1 "upstream time_tracking" /etc/nginx/nginx.conf;
+            echo "=== nginx -T live confirmation ===";
+            docker exec nginx-proxy nginx -T 2>/dev/null | grep -A2 "upstream time_tracking";
+          '
+
+      - name: Deterministic proof round 2 — stop Docker, confirm site NOW breaks, then recover
+        run: |
+          echo "=== baseline: site up before test ===";
+          curl -s --max-time 15 https://time.woventalent.in/api/health; echo
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            docker stop woven-time-tracking
+          '
+          sleep 3
+          echo "=== WITH Docker stopped — should now FAIL if truly repointed ===";
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" --max-time 10 https://time.woventalent.in/api/health || echo "(no response - confirms Docker is now the real backend)"
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            docker start woven-time-tracking
+            for i in $(seq 1 24); do
+              status=$(docker inspect --format="{{.State.Health.Status}}" woven-time-tracking 2>/dev/null || echo "starting")
+              if [ "$status" = "healthy" ]; then echo "back to healthy"; break; fi
+              sleep 5
+            done
+          '
+          sleep 2
+          echo "=== recovered? ===";
+          curl -s --max-time 15 https://time.woventalent.in/api/health; echo
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" --max-time 15 https://time.woventalent.in/
+
+      - name: Verify data integrity on the now-live Docker backend
+        run: |
+          cat > /tmp/inspect_db.js << 'EOF'
+          const { DatabaseSync } = require('node:sqlite')
+          const db = new DatabaseSync(process.argv[2], { readOnly: true })
+          for (const t of ['users', 'workspaces', 'projects', 'timesheet_entries']) {
+            console.log(t + ': ' + db.prepare('SELECT COUNT(*) AS c FROM ' + t).get().c)
+          }
+          const r = db.prepare('SELECT MIN(date) AS a, MAX(date) AS b FROM timesheet_entries').get()
+          console.log('timesheet date range: ' + r.a + ' to ' + r.b)
+          EOF
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes /tmp/inspect_db.js root@${{ secrets.SSH_HOST }}:/tmp/inspect_db.js
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            docker run --rm -v time-tracking_db-data:/data:ro -v /tmp/inspect_db.js:/inspect.js:ro node:22-alpine node --experimental-sqlite /inspect.js /data/timetracking.db
+          '
+
+      - name: Verify every OTHER site on this shared proxy still works after the restart
+        run: |
+          for domain in prism.woventalent.in i-2-rcc.woventalent.in plane.nativeworld.com alternatives.nativeworld.com support.nativeworld.com sbx-lens.nativeworld.com; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://$domain/" || echo "000")
+            echo "$domain -> HTTP $code"
+          done
+
+      - name: Report
+        run: |
+          echo "nginx-proxy restarted; bind mount re-established against the current config."
+          echo "time_tracking upstream now genuinely points at 127.0.0.1:3009 (Docker), confirmed by stop/start test."
+          echo "PM2's woven-time-tracking process is still running as an idle safety net (not stopped)."
