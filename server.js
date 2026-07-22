@@ -1247,7 +1247,7 @@ app.get('/api/reports/by-project', (req, res) => {
     LEFT JOIN project_types pt     ON pt.id = p.project_type_id
     LEFT JOIN timesheet_entries te ON te.project_id = p.id ${dateFilter}
     WHERE p.workspace_id = ?
-    GROUP BY p.id ORDER BY total_hours DESC
+    GROUP BY p.id ORDER BY p.created_at DESC
   `).all(...dateParams, req.workspaceId)
   res.json(rows)
 })
