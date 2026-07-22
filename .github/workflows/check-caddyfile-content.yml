@@ -14,15 +14,21 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
 
-      - name: Find the default_server block catching time.woventalent.in
+      - name: Check letsencrypt certs and nginx.conf includes for hidden config
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
-            echo "=== grep default_server across all nginx config ===";
-            nginx -T 2>/dev/null | grep -n -B3 "default_server";
+            echo "=== letsencrypt live domains (definitive list of certs actually issued) ===";
+            ls -la /etc/letsencrypt/live/ 2>/dev/null || echo "no letsencrypt live dir";
             echo;
-            echo "=== full contents of sites-enabled/alternative-ens ===";
-            cat -n /etc/nginx/sites-enabled/alternative-ens;
+            echo "=== nginx.conf include directives ===";
+            grep -n "include" /etc/nginx/nginx.conf;
             echo;
-            echo "=== is alternative-ens the one nginx -T reports as the source for the default_server block? ===";
-            nginx -T 2>/dev/null | grep -n "configuration file";
+            echo "=== any other nginx install / process on this host? (search whole filesystem for nginx binaries) ===";
+            find / -xdev -iname "nginx" -type f 2>/dev/null;
+            echo;
+            echo "=== full process list for anything containing nginx or 3007 or the app ===";
+            ps aux | grep -iE "nginx|3007" | grep -v grep;
+            echo;
+            echo "=== full raw nginx -T dump (small enough to just read directly) ===";
+            nginx -T 2>&1;
           '
