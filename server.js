@@ -1235,7 +1235,7 @@ app.get('/api/reports/by-project', (req, res) => {
   const dateFilter = from && to ? 'AND te.date BETWEEN ? AND ?' : from ? 'AND te.date >= ?' : to ? 'AND te.date <= ?' : ''
   const dateParams = from && to ? [from, to] : from ? [from] : to ? [to] : []
   const rows = db.prepare(`
-    SELECT p.project_code, p.name AS project_name, p.budgeted_hours,
+    SELECT p.id, p.status, p.project_code, p.name AS project_name, p.budgeted_hours,
            p.report_initiated, p.report_delivered,
            c.name AS client_name, pt.name AS type_name, pt.color AS type_color,
            COALESCE(SUM(te.hours), 0) AS total_hours,

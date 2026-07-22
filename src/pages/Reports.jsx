@@ -63,6 +63,7 @@ export default function Reports() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const [view,        setView]    = useState('project')
+  const [statusTab,   setStatusTab] = useState('all')
   const [granularity, setGranularity] = useState('daily')
   const [byProject,   setByProj]  = useState([])
   const [byUser,      setByUser]  = useState([])
@@ -97,13 +98,14 @@ export default function Reports() {
     return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
   }
 
-  const totalHours = byProject.reduce((s, r) => s + r.total_hours, 0)
+  const filteredByProject = statusTab === 'all' ? byProject : byProject.filter(r => r.status === statusTab)
+  const totalHours = filteredByProject.reduce((s, r) => s + r.total_hours, 0)
 
   function exportCsv() {
     const suffix = [from, to].filter(Boolean).join('_to_') || 'all'
     if (view === 'project') {
       const header = ['Project Code', 'Project Name', 'Type', 'Client', 'Hours Logged', ...(isAdmin ? ['Credits'] : []), 'Report Initiated', 'Report Delivered', 'TAT (days)', 'Users Assigned']
-      const rows = byProject.map(r => [
+      const rows = filteredByProject.map(r => [
         r.project_code, r.project_name, r.type_name || '', r.client_name || '',
         r.total_hours.toFixed(2), ...(isAdmin ? [(r.total_hours / 9).toFixed(2)] : []),
         r.report_initiated || '', r.report_delivered || '',
@@ -153,6 +155,18 @@ export default function Reports() {
             }}>{label}</button>
           ))}
         </div>
+        {view === 'project' && (
+          <div style={{ display: 'flex', borderRadius: 7, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+            {[['all', 'All'], ['active', 'Active'], ['completed', 'Completed']].map(([id, label]) => (
+              <button key={id} onClick={() => setStatusTab(id)} style={{
+                padding: '8px 16px', border: 'none', fontSize: 13.5, fontWeight: 500,
+                background: statusTab === id ? '#2563eb' : '#fff',
+                color:      statusTab === id ? '#fff'    : '#475569',
+                cursor: 'pointer',
+              }}>{label}</button>
+            ))}
+          </div>
+        )}
         {view === 'period' && (
           <div style={{ display: 'flex', borderRadius: 7, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
             {[['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly']].map(([id, label]) => (
@@ -191,9 +205,9 @@ export default function Reports() {
               </tr>
             </thead>
             <tbody>
-              {byProject.length === 0 ? (
+              {filteredByProject.length === 0 ? (
                 <tr><td colSpan={isAdmin ? 7 : 6} style={{ padding: '48px', textAlign: 'center', color: '#94a3b8' }}>No data yet</td></tr>
-              ) : byProject.map((r, i) => {
+              ) : filteredByProject.map((r, i) => {
                 const tat = businessDays(r.report_initiated, r.report_delivered)
                 const userNames = r.users_assigned ? r.users_assigned.split('||').filter(Boolean) : []
                 return (
@@ -231,7 +245,7 @@ export default function Reports() {
                 )
               })}
             </tbody>
-            {byProject.length > 0 && (
+            {filteredByProject.length > 0 && (
               <tfoot>
                 <tr style={{ background: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
                   <td colSpan={3} style={{ padding: '10px 16px', fontWeight: 600, color: '#475569', fontSize: 13 }}>Total</td>
