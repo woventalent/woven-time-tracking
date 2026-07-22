@@ -36,13 +36,13 @@ function defaultDateFor(project) {
   return d
 }
 
-export default function Timesheets({ initialProjectId }) {
+export default function Timesheets() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const [entries,    setEntries]   = useState([])
   const [projects,   setProjects]  = useState([])  // assigned projects (all projects for admins)
   const [wsUsers,    setWsUsers]   = useState([])   // all workspace users
-  const [showAll,    setShowAll]   = useState(true) // show all users' entries by default
+  const [showAll,    setShowAll]   = useState(isAdmin) // admins see all users' entries by default
   const [filters,    setFilters]   = useState({ project_id: '', from: '', to: '', user_id: '' })
   const [showModal,  setShowModal] = useState(false)
   const [editing,    setEditing]   = useState(null)
@@ -52,30 +52,9 @@ export default function Timesheets({ initialProjectId }) {
   const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
-    async function loadProjects() {
-      const ps = await api.get(isAdmin ? '/projects' : '/projects?assigned=true')
-      let list = ps
-      if (initialProjectId) {
-        const found = ps.find(p => p.id === initialProjectId)
-        if (!found) {
-          // Project not in user's assigned list — fetch all to get its details
-          const all = await api.get('/projects')
-          const target = all.find(p => p.id === initialProjectId)
-          if (target) list = [...ps, target]
-        }
-        const proj = list.find(p => p.id === initialProjectId)
-        setProjects(list)
-        setEditing(null)
-        setForm({ client_id: proj?.client_id ? String(proj.client_id) : '', project_id: String(initialProjectId), date: defaultDateFor(proj), hours: '', description: '' })
-        setError('')
-        setShowModal(true)
-      } else {
-        setProjects(ps)
-      }
-    }
-    loadProjects()
+    api.get(isAdmin ? '/projects' : '/projects?assigned=true').then(setProjects)
     api.get('/workspace-users').then(setWsUsers)
-  }, [initialProjectId])
+  }, [])
 
   useEffect(() => {
     const params = Object.fromEntries(Object.entries(filters).filter(([, v]) => v))
@@ -179,16 +158,18 @@ export default function Timesheets({ initialProjectId }) {
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 18, flexWrap: 'wrap', alignItems: 'center' }}>
-        <button onClick={() => { setShowAll(v => !v); setFilters({ project_id: '', from: '', to: '', user_id: '' }) }}
-          style={{ padding: '8px 14px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: showAll ? '#0f172a' : '#fff', color: showAll ? '#fff' : '#475569' }}>
-          {showAll ? 'All Entries' : 'My Entries'}
-        </button>
+        {isAdmin && (
+          <button onClick={() => { setShowAll(v => !v); setFilters({ project_id: '', from: '', to: '', user_id: '' }) }}
+            style={{ padding: '8px 14px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: showAll ? '#0f172a' : '#fff', color: showAll ? '#fff' : '#475569' }}>
+            {showAll ? 'All Entries' : 'My Entries'}
+          </button>
+        )}
         <select value={filters.project_id} onChange={e => setFilters({ ...filters, project_id: e.target.value })}
           style={{ ...iStyle, maxWidth: 280 }}>
           <option value="">{showAll ? 'All Projects' : 'All My Projects'}</option>
           {projects.map(p => <option key={p.id} value={p.id}>{p.project_code} — {p.name}</option>)}
         </select>
-        {showAll && (
+        {isAdmin && showAll && (
           <select value={filters.user_id} onChange={e => setFilters({ ...filters, user_id: e.target.value })}
             style={{ ...iStyle, maxWidth: 220 }}>
             <option value="">All Users</option>
