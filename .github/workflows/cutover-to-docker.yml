@@ -27,7 +27,7 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
             # Stop the empty-DB container first so nothing else touches this volume mid-copy.
-            # PM2 is untouched here — it keeps serving on 3007 while we prepare Docker on 3002.
+            # PM2 is untouched here — it keeps serving on 3007 while we prepare Docker on 3009.
             docker stop woven-time-tracking 2>/dev/null || echo "already stopped / not found";
 
             echo "=== volume contents before seeding ===";
@@ -48,7 +48,7 @@ jobs:
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} \
             "cd /var/www/time-tracking && docker compose up -d --build --remove-orphans"
 
-      - name: Wait for healthy and verify real data on 3002 (PM2 on 3007 is unaffected either way)
+      - name: Wait for healthy and verify real data on 3009 (PM2 on 3007 is unaffected either way)
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
             for i in $(seq 1 24); do
@@ -63,14 +63,14 @@ jobs:
               sleep 5
             done
 
-            echo "=== direct health check on container port 3002 ===";
-            curl -s http://localhost:3002/api/health; echo
+            echo "=== direct health check on container port 3009 ===";
+            curl -s http://localhost:3009/api/health; echo
 
             echo "=== PM2 status (should still be untouched, online) ===";
             pm2 list;
           '
 
-      - name: "Row counts on port 3002 volume (should match PM2 - 21 projects, 31 entries)"
+      - name: "Row counts on the freshly seeded volume (should match PM2's current live data)"
         run: |
           cat > /tmp/inspect_db.js << 'EOF'
           const { DatabaseSync } = require('node:sqlite')
@@ -90,9 +90,12 @@ jobs:
 
       - name: STOP — do not proceed automatically
         run: |
-          echo "Docker container is up on port 3002 and verified above."
+          echo "Docker container is up on port 3009 and verified above."
           echo "PM2 is still running on 3007 and still serving https://time.woventalent.in — nothing has changed for real users yet."
           echo "Next steps (separate, deliberate follow-ups after reviewing this run's output):"
           echo "  1. Confirm the row counts above genuinely match PM2's real data."
-          echo "  2. Run the 'Stop PM2' workflow to decommission PM2 once confirmed."
-          echo "  3. Repoint Caddy from 172.18.0.1:3007 to 172.18.0.1:3002 and reload."
+          echo "  2. Repoint nginx-proxy's time_tracking upstream (config at"
+          echo "     /opt/alternative-ens-deployment/nginx.production.conf on the host) from"
+          echo "     127.0.0.1:3007 to 127.0.0.1:3009, then: docker exec nginx-proxy nginx -t"
+          echo "     && docker exec nginx-proxy nginx -s reload."
+          echo "  3. Once confirmed stable, PM2 can be stopped as a separate follow-up."
