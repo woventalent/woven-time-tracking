@@ -14,24 +14,19 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
 
-      - name: Find what actually terminates TLS on 443 and its real config
+      - name: Read the real host nginx config for time.woventalent.in (read-only)
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
-            echo "=== what is listening on 443 / 80 on the HOST ===";
-            (ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null) | grep -E ":(443|80)\b" || echo "nothing found via ss/netstat";
+            echo "=== nginx -T (full effective config), filtered to the time.woventalent.in server block ===";
+            nginx -T 2>/dev/null | awk "/server_name[^;]*time\.woventalent\.in/{f=1} f{print} f&&/^}/{f=0; print \"---\"}";
             echo;
-            echo "=== all docker containers publishing 443 or 80 ===";
-            docker ps -a --filter "publish=443" --format "{{.ID}}  {{.Names}}  {{.Status}}  {{.Ports}}";
-            docker ps -a --filter "publish=80" --format "{{.ID}}  {{.Names}}  {{.Status}}  {{.Ports}}";
+            echo "=== which config FILES define server_name time.woventalent.in ===";
+            grep -rl "time.woventalent.in" /etc/nginx/ 2>/dev/null || echo "no file matched under /etc/nginx";
             echo;
-            echo "=== ALL running containers (full list, unfiltered) ===";
-            docker ps --format "{{.ID}}  {{.Names}}  {{.Image}}  {{.Ports}}";
+            echo "=== full listing of sites-enabled / conf.d ===";
+            ls -la /etc/nginx/sites-enabled/ 2>/dev/null;
+            ls -la /etc/nginx/conf.d/ 2>/dev/null;
             echo;
-            echo "=== is there an nginx anywhere? ===";
-            docker ps -a --filter "name=nginx" --format "{{.ID}} {{.Names}} {{.Status}}";
-            systemctl status nginx --no-pager 2>&1 | head -10 || echo "no systemd nginx";
-            which nginx caddy 2>/dev/null || echo "no host-level nginx/caddy binary";
-            echo;
-            echo "=== any process on the host (outside docker) bound to 443 ===";
-            lsof -i :443 2>/dev/null || echo "lsof not available or nothing found";
+            echo "=== nginx -t (config syntax check, read-only) ===";
+            nginx -t 2>&1;
           '
