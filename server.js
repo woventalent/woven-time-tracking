@@ -1406,31 +1406,42 @@ async function sendDailyBackupEmail() {
   const contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
   if (MS_AUTH) {
-    const fromEmail = [...SUPER_ADMIN_EMAILS][0]
-    if (!fromEmail) { console.error('Daily backup email skipped: no SUPER_ADMIN_EMAIL configured to send from'); return }
+    if (!SUPER_ADMIN_EMAILS.size) { console.error('Daily backup email skipped: no SUPER_ADMIN_EMAIL configured to send from'); return }
     const token = await getGraphToken()
-    const graphRes = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(fromEmail)}/sendMail`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: {
-          subject,
-          body: { contentType: 'HTML', content: html },
-          toRecipients: [{ emailAddress: { address: BACKUP_RECIPIENT } }],
-          attachments: [{
-            '@odata.type': '#microsoft.graph.fileAttachment',
-            name: filename,
-            contentType,
-            contentBytes: Buffer.from(buffer).toString('base64'),
-          }],
-        },
-        saveToSentItems: true,
-      }),
-    })
-    if (!graphRes.ok) {
-      const err = await graphRes.json().catch(() => ({}))
-      console.error('Daily backup Graph sendMail failed:', err?.error?.message || graphRes.status)
+    // Not every configured SUPER_ADMIN_EMAIL is necessarily a real mailbox in this
+    // Microsoft tenant (e.g. a personal address kept only for elevation) — try each
+    // until one actually succeeds rather than assuming the first is valid.
+    let lastError = null
+    for (const fromEmail of SUPER_ADMIN_EMAILS) {
+      try {
+        const graphRes = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(fromEmail)}/sendMail`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: {
+              subject,
+              body: { contentType: 'HTML', content: html },
+              toRecipients: [{ emailAddress: { address: BACKUP_RECIPIENT } }],
+              attachments: [{
+                '@odata.type': '#microsoft.graph.fileAttachment',
+                name: filename,
+                contentType,
+                contentBytes: Buffer.from(buffer).toString('base64'),
+              }],
+            },
+            saveToSentItems: true,
+          }),
+        })
+        if (graphRes.ok) return
+        const err = await graphRes.json().catch(() => ({}))
+        lastError = err?.error?.message || graphRes.status
+        console.error(`Daily backup Graph sendMail failed for ${fromEmail}:`, lastError)
+      } catch (err) {
+        lastError = err.message
+        console.error(`Daily backup Graph email error for ${fromEmail}:`, err.message)
+      }
     }
+    console.error('Daily backup email: every configured SUPER_ADMIN_EMAIL sender failed. Last error:', lastError)
     return
   }
 
