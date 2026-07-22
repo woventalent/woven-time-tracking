@@ -14,16 +14,24 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
 
-      - name: Full contents of the live Caddyfile, with line numbers, plus a case-insensitive search
+      - name: Find what actually terminates TLS on 443 and its real config
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
-            echo "=== full contents (line-numbered) ===";
-            cat -n /opt/plane-deploy/plane-app/Caddyfile;
+            echo "=== what is listening on 443 / 80 on the HOST ===";
+            (ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null) | grep -E ":(443|80)\b" || echo "nothing found via ss/netstat";
             echo;
-            echo "=== case-insensitive grep for woventalent ===";
-            grep -in "woventalent" /opt/plane-deploy/plane-app/Caddyfile || echo "no match at all";
+            echo "=== all docker containers publishing 443 or 80 ===";
+            docker ps -a --filter "publish=443" --format "{{.ID}}  {{.Names}}  {{.Status}}  {{.Ports}}";
+            docker ps -a --filter "publish=80" --format "{{.ID}}  {{.Names}}  {{.Status}}  {{.Ports}}";
             echo;
-            echo "=== byte count / md5 (sanity check its not empty/truncated) ===";
-            wc -l /opt/plane-deploy/plane-app/Caddyfile;
-            md5sum /opt/plane-deploy/plane-app/Caddyfile;
+            echo "=== ALL running containers (full list, unfiltered) ===";
+            docker ps --format "{{.ID}}  {{.Names}}  {{.Image}}  {{.Ports}}";
+            echo;
+            echo "=== is there an nginx anywhere? ===";
+            docker ps -a --filter "name=nginx" --format "{{.ID}} {{.Names}} {{.Status}}";
+            systemctl status nginx --no-pager 2>&1 | head -10 || echo "no systemd nginx";
+            which nginx caddy 2>/dev/null || echo "no host-level nginx/caddy binary";
+            echo;
+            echo "=== any process on the host (outside docker) bound to 443 ===";
+            lsof -i :443 2>/dev/null || echo "lsof not available or nothing found";
           '
