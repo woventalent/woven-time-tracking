@@ -1,0 +1,41 @@
+name: Deploy fixes to the live PM2 process (safe path, no proxy changes)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Rebuild frontend and restart PM2 with the latest code (already rsynced by deploy.yml)
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            set -e
+            cd /var/www/time-tracking
+            echo "=== confirm the fix is present in the rsynced server.js before doing anything ===";
+            grep -n "isAdmin && req.query.all" server.js || (echo "FIX NOT FOUND IN SYNCED CODE — aborting" && exit 1)
+            echo;
+            echo "=== npm ci (full install — build needs devDependencies like vite) ===";
+            npm ci 2>&1 | tail -5
+            echo;
+            echo "=== npm run build (regenerate dist/, excluded from deploy.yml rsync) ===";
+            npm run build
+            echo;
+            echo "=== restart PM2 ===";
+            pm2 restart woven-time-tracking
+            sleep 3
+            pm2 list
+            echo;
+            echo "=== local health check on 3007 ===";
+            curl -s http://localhost:3007/api/health; echo
+          '
+          echo "=== public health check ==="
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" --max-time 15 https://time.woventalent.in/api/health
+          curl -s --max-time 15 https://time.woventalent.in/api/health; echo
