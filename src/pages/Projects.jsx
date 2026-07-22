@@ -41,7 +41,7 @@ function businessDays(start, end) {
   return count
 }
 
-export default function Projects({ onLogTime }) {
+export default function Projects() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
 
@@ -274,11 +274,6 @@ export default function Projects({ onLogTime }) {
                     })()}
                   </td>
                   <td style={{ padding: '13px 16px', whiteSpace: 'nowrap' }}>
-                    {myProjectIds.has(p.id) && (
-                      <button onClick={e => { e.stopPropagation(); onLogTime && onLogTime(p.id) }} style={{ border: '1px solid #bfdbfe', background: '#eff6ff', padding: '4px 10px', borderRadius: 5, fontSize: 12, color: '#2563eb', cursor: 'pointer', marginRight: 6, fontWeight: 600 }}>
-                        Log Time
-                      </button>
-                    )}
                     {isAdmin && (<>
                       <button onClick={e => { e.stopPropagation(); openEdit(p) }} style={{ border: '1px solid #e2e8f0', background: '#fff', padding: '4px 10px', borderRadius: 5, fontSize: 12, color: '#475569', cursor: 'pointer', marginRight: 6 }}>
                         Edit
