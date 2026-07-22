@@ -14,18 +14,15 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
 
-      - name: Confirm whether SSH_HOST is even the box behind time.woventalent.in
+      - name: Find the default_server block catching time.woventalent.in
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
-            echo "=== hostname ===";
-            hostname; hostname -I 2>/dev/null;
+            echo "=== grep default_server across all nginx config ===";
+            nginx -T 2>/dev/null | grep -n -B3 "default_server";
             echo;
-            echo "=== public IP as seen by this host ===";
-            curl -s --max-time 10 https://ifconfig.me || curl -s --max-time 10 https://api.ipify.org || echo "could not determine public IP";
+            echo "=== full contents of sites-enabled/alternative-ens ===";
+            cat -n /etc/nginx/sites-enabled/alternative-ens;
             echo;
-            echo "=== does curl to localhost:443 with the right Host header hit our app? ===";
-            curl -sk --max-time 10 -H "Host: time.woventalent.in" https://localhost/api/health; echo;
-            echo;
-            echo "=== ALL nginx server_name directives on this host (every site) ===";
-            nginx -T 2>/dev/null | grep -i "server_name" ;
+            echo "=== is alternative-ens the one nginx -T reports as the source for the default_server block? ===";
+            nginx -T 2>/dev/null | grep -n "configuration file";
           '
