@@ -847,6 +847,11 @@ app.delete('/api/workspace-users/:userId', (req, res) => {
   if (isLastAdmin(req.params.userId, req.workspaceId)) {
     return res.status(400).json({ error: 'Cannot remove the last admin from a workspace' })
   }
+  db.prepare(`
+    DELETE FROM project_members WHERE user_id = ? AND project_id IN (
+      SELECT id FROM projects WHERE workspace_id = ?
+    )
+  `).run(req.params.userId, req.workspaceId)
   db.prepare('DELETE FROM workspace_members WHERE user_id = ? AND workspace_id = ?').run(req.params.userId, req.workspaceId)
   res.json({ success: true })
 })
@@ -1115,7 +1120,8 @@ app.delete('/api/projects/:id/documents/:docId', (req, res) => {
 
 app.get('/api/timesheets', (req, res) => {
   const { project_id, from, to, user_id } = req.query
-  const showAll = req.query.all === 'true'
+  const isAdmin = req.userRole === 'admin' || req.globalRole === 'super_admin'
+  const showAll = isAdmin && req.query.all === 'true'
   let sql = `
     SELECT te.*, p.project_code, p.name AS project_name, c.name AS client_name,
            u.name AS user_name
@@ -1155,7 +1161,11 @@ app.post('/api/timesheets', (req, res) => {
     const isMember = db.prepare('SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?').get(project_id, req.userId)
     if (!isMember) return res.status(403).json({ error: 'You are not assigned to this project' })
   }
-  const existingHours = db.prepare('SELECT COALESCE(SUM(hours), 0) AS total FROM timesheet_entries WHERE user_id = ? AND date = ?').get(req.userId, date).total
+  const existingHours = db.prepare(`
+    SELECT COALESCE(SUM(te.hours), 0) AS total FROM timesheet_entries te
+    JOIN projects p ON p.id = te.project_id
+    WHERE te.user_id = ? AND te.date = ? AND p.workspace_id = ?
+  `).get(req.userId, date, req.workspaceId).total
   if (existingHours + parsedHours > 24) {
     return res.status(400).json({ error: `Total hours logged for ${date} would exceed 24 (already logged ${existingHours}h)` })
   }
@@ -1192,9 +1202,11 @@ app.put('/api/timesheets/:id', (req, res) => {
     const isMember = db.prepare('SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?').get(project_id, req.userId)
     if (!isMember) return res.status(403).json({ error: 'You are not assigned to this project' })
   }
-  const existingHours = db.prepare(
-    'SELECT COALESCE(SUM(hours), 0) AS total FROM timesheet_entries WHERE user_id = ? AND date = ? AND id != ?'
-  ).get(entry.user_id, date, req.params.id).total
+  const existingHours = db.prepare(`
+    SELECT COALESCE(SUM(te.hours), 0) AS total FROM timesheet_entries te
+    JOIN projects p ON p.id = te.project_id
+    WHERE te.user_id = ? AND te.date = ? AND te.id != ? AND p.workspace_id = ?
+  `).get(entry.user_id, date, req.params.id, req.workspaceId).total
   if (existingHours + parsedHours > 24) {
     return res.status(400).json({ error: `Total hours logged for ${date} would exceed 24 (already logged ${existingHours}h)` })
   }

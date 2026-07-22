@@ -42,7 +42,7 @@ export default function Timesheets({ initialProjectId }) {
   const [entries,    setEntries]   = useState([])
   const [projects,   setProjects]  = useState([])  // assigned projects (all projects for admins)
   const [wsUsers,    setWsUsers]   = useState([])   // all workspace users
-  const [showAll,    setShowAll]   = useState(true) // show all users' entries by default
+  const [showAll,    setShowAll]   = useState(isAdmin) // admins see all entries by default; members only ever see their own
   const [filters,    setFilters]   = useState({ project_id: '', from: '', to: '', user_id: '' })
   const [showModal,  setShowModal] = useState(false)
   const [editing,    setEditing]   = useState(null)
@@ -135,7 +135,7 @@ export default function Timesheets({ initialProjectId }) {
   }
 
   const totalHours = entries.reduce((s, e) => s + e.hours, 0)
-  const hasFilters = Object.values(filters).some(Boolean) || !showAll
+  const hasFilters = Object.values(filters).some(Boolean) || (isAdmin && !showAll)
 
   function exportCsv() {
     const escape = v => {
@@ -179,10 +179,12 @@ export default function Timesheets({ initialProjectId }) {
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 18, flexWrap: 'wrap', alignItems: 'center' }}>
-        <button onClick={() => { setShowAll(v => !v); setFilters({ project_id: '', from: '', to: '', user_id: '' }) }}
-          style={{ padding: '8px 14px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: showAll ? '#0f172a' : '#fff', color: showAll ? '#fff' : '#475569' }}>
-          {showAll ? 'All Entries' : 'My Entries'}
-        </button>
+        {isAdmin && (
+          <button onClick={() => { setShowAll(v => !v); setFilters({ project_id: '', from: '', to: '', user_id: '' }) }}
+            style={{ padding: '8px 14px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: showAll ? '#0f172a' : '#fff', color: showAll ? '#fff' : '#475569' }}>
+            {showAll ? 'All Entries' : 'My Entries'}
+          </button>
+        )}
         <select value={filters.project_id} onChange={e => setFilters({ ...filters, project_id: e.target.value })}
           style={{ ...iStyle, maxWidth: 280 }}>
           <option value="">{showAll ? 'All Projects' : 'All My Projects'}</option>
@@ -200,7 +202,7 @@ export default function Timesheets({ initialProjectId }) {
         <input type="date" value={filters.to} onChange={e => setFilters({ ...filters, to: e.target.value })}
           style={{ ...iStyle, maxWidth: 160 }} title="To date" />
         {hasFilters && (
-          <button onClick={() => { setFilters({ project_id: '', from: '', to: '', user_id: '' }); setShowAll(true) }}
+          <button onClick={() => { setFilters({ project_id: '', from: '', to: '', user_id: '' }); setShowAll(isAdmin) }}
             style={{ padding: '8px 12px', border: '1px solid #e2e8f0', background: '#fff', borderRadius: 6, fontSize: 13, color: '#64748b', cursor: 'pointer' }}>
             Clear filters
           </button>
