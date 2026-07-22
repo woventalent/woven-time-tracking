@@ -2,13 +2,14 @@ name: Deploy to Production
 
 on:
   workflow_dispatch:
-  # push trigger temporarily disabled — this workflow deploys to
-  # /var/www/time-tracking, which turns out NOT to be the real production
-  # deployment. Production actually runs from a separate, independently-managed
-  # checkout at /opt/alternative-ens-deployment/time-tracking/. Re-enable
-  # `push: branches: [main]` only after deploy.yml is repointed at the correct
-  # path (or the two deployments are otherwise reconciled) — see the commit
-  # that disabled this trigger for the full incident writeup.
+  # push trigger temporarily disabled since an earlier incident (see the commit
+  # that disabled it for the writeup). This workflow's target, /var/www/time-tracking
+  # + the woven-time-tracking Docker container on host port 3009, is the intended
+  # cutover target for production: nginx-proxy's time_tracking upstream (config at
+  # /opt/alternative-ens-deployment/nginx.production.conf) is being repointed here
+  # from the PM2 process that has served this app until now — see the commit that
+  # made this change for whether that cutover succeeded. Re-enable
+  # `push: branches: [main]` once this path has run stably for a while.
 
 jobs:
   deploy:
@@ -52,17 +53,17 @@ jobs:
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes" \
             ./ root@${{ secrets.SSH_HOST }}:/var/www/time-tracking/
 
-      - name: Free port 3002 if held by a container outside this Compose project
+      - name: Free port 3009 if held by a container outside this Compose project
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
-            echo "Containers currently publishing 3002:"
-            docker ps --filter "publish=3002" --format "{{.ID}}  {{.Names}}  {{.Image}}"
-            stale=$(docker ps -q --filter "publish=3002")
+            echo "Containers currently publishing 3009:"
+            docker ps --filter "publish=3009" --format "{{.ID}}  {{.Names}}  {{.Image}}"
+            stale=$(docker ps -q --filter "publish=3009")
             if [ -n "$stale" ]; then
-              echo "Stopping container(s) holding port 3002 so this deploy can rebind it: $stale"
+              echo "Stopping container(s) holding port 3009 so this deploy can rebind it: $stale"
               docker stop $stale
             else
-              echo "Port 3002 is free."
+              echo "Port 3009 is free."
             fi
           '
 

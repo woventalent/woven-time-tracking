@@ -1,8 +1,16 @@
-# Production now deploys via this file — deploy.yml runs `docker compose up -d --build`
-# on every push to main (see README's "Docker" section). PM2 (ecosystem.config.cjs) is
-# kept only as a legacy fallback and must not run against this host at the same time:
-# it binds host port 3001, and if both PM2 and this container were active they'd fight
-# over the port and PM2 would crash-loop trying to rebind it (see issue #103).
+# Production traffic for time.woventalent.in is routed by an nginx container
+# ("nginx-proxy", running --network host, config at
+# /opt/alternative-ens-deployment/nginx.production.conf on the host — NOT the
+# Caddy setup or the host's own /etc/nginx described elsewhere in this repo's
+# history, both of which turned out to be unrelated) via an upstream named
+# time_tracking. As of 2026-07-22 that upstream still points at PM2 on
+# 127.0.0.1:3007, not this container — see issue history for the in-progress
+# cutover. This container publishes on host port 3009 (NOT 3002 — 3002 is
+# already claimed by a different upstream, salesforce_lens_web, on this same
+# nginx; reusing it would make lens.nativeworld.com serve this app too).
+# PM2 (ecosystem.config.cjs) is kept only as a fallback; do not repoint this
+# container at a port already used by another upstream in that nginx config
+# without checking it first.
 services:
   app:
     build: .
@@ -19,7 +27,7 @@ services:
       - db-data:/app/data
       - uploads-data:/app/uploads
     ports:
-      - "3002:3000"
+      - "3009:3000"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
