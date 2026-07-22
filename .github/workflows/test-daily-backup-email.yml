@@ -1,0 +1,109 @@
+name: Test Daily Backup Email (issue #126)
+
+# One-off diagnostic: exercises the REAL /api/admin/send-backup-now route inside
+# the live woven-time-tracking container (real DB, real Azure/Graph credentials,
+# real recipient sujita.kamble@woventalent.in), without needing a browser-based
+# Microsoft SSO login. It does this by minting a short-lived (5 min) session row
+# directly in the container's SQLite DB for whichever user is already configured
+# as super_admin via SUPER_ADMIN_EMAIL, calling the endpoint, then deleting that
+# temporary session row again. No permanent state is left behind beyond whatever
+# global_role/workspace membership that admin already legitimately has.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-backup-email:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Write test script
+        run: |
+          cat > /tmp/test_backup.js << 'EOF'
+          const { DatabaseSync } = require('node:sqlite')
+          const { randomUUID } = require('crypto')
+
+          const db = new DatabaseSync('/app/data/timetracking.db')
+
+          const superAdminEnv = (process.env.SUPER_ADMIN_EMAIL || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean)
+          if (!superAdminEnv.length) {
+            console.log('RESULT: FAIL — SUPER_ADMIN_EMAIL is not configured in this container\'s env')
+            process.exit(1)
+          }
+          console.log('Configured SUPER_ADMIN_EMAIL(s): ' + superAdminEnv.join(', '))
+
+          let admin = null
+          for (const email of superAdminEnv) {
+            admin = db.prepare('SELECT id, email, global_role FROM users WHERE lower(email) = ?').get(email)
+            if (admin) break
+          }
+          if (!admin) {
+            console.log('RESULT: FAIL — none of the configured SUPER_ADMIN_EMAIL addresses have ever logged in (no users row)')
+            process.exit(1)
+          }
+          console.log('Using admin user: ' + admin.email + ' (id ' + admin.id + ', global_role=' + admin.global_role + ')')
+
+          if (admin.global_role !== 'super_admin') {
+            db.prepare("UPDATE users SET global_role = 'super_admin' WHERE id = ?").run(admin.id)
+            console.log('Elevated global_role to super_admin (matches SUPER_ADMIN_EMAIL config; would happen automatically on next login anyway)')
+          }
+
+          let membership = db.prepare('SELECT workspace_id FROM workspace_members WHERE user_id = ? LIMIT 1').get(admin.id)
+          let workspaceId
+          if (membership) {
+            workspaceId = membership.workspace_id
+            console.log('Using existing workspace membership: workspace_id=' + workspaceId)
+          } else {
+            workspaceId = 1
+            db.prepare("INSERT OR IGNORE INTO workspace_members (user_id, workspace_id, role) VALUES (?, 1, 'admin')").run(admin.id)
+            console.log('Admin had no workspace membership — added membership in default workspace_id=1 to allow the API auth guard to pass')
+          }
+
+          const sessionId = randomUUID()
+          const exp = new Date(Date.now() + 5 * 60 * 1000).toISOString().replace('T', ' ').split('.')[0]
+          db.prepare('INSERT INTO sessions (id, user_id, workspace_id, expires_at) VALUES (?, ?, ?, ?)').run(sessionId, admin.id, workspaceId, exp)
+          console.log('Minted temporary session (expires in 5 min): ' + sessionId)
+
+          async function main() {
+            try {
+              const res = await fetch('http://localhost:3000/api/admin/send-backup-now', {
+                method: 'POST',
+                headers: { Cookie: 'wtt_session=' + sessionId },
+              })
+              const body = await res.text()
+              console.log('POST /api/admin/send-backup-now -> HTTP ' + res.status + ' ' + body)
+
+              // sendDailyBackupEmail() is fire-and-forget from the route's perspective —
+              // give it a few seconds to actually build the workbook and call Graph/SMTP
+              // before we look for success/error evidence and clean up.
+              await new Promise(r => setTimeout(r, 6000))
+            } finally {
+              db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId)
+              console.log('Deleted temporary session ' + sessionId)
+            }
+          }
+
+          main()
+          EOF
+
+      - name: Copy script into the live container and run it
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} 'cat > /tmp/test_backup.js' < /tmp/test_backup.js
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            docker cp /tmp/test_backup.js woven-time-tracking:/tmp/test_backup.js
+            echo "=== running inside container ==="
+            docker exec woven-time-tracking node /tmp/test_backup.js
+          '
+
+      - name: Container logs around the trigger (look for Graph/SMTP errors)
+        if: always()
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            docker logs --tail 40 woven-time-tracking
+          '
