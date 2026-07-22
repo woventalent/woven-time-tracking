@@ -3,6 +3,7 @@ import express from 'express'
 import cookieParser from 'cookie-parser'
 import multer from 'multer'
 import nodemailer from 'nodemailer'
+import ExcelJS from 'exceljs'
 import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
@@ -1246,7 +1247,7 @@ app.get('/api/reports/by-project', (req, res) => {
     LEFT JOIN project_types pt     ON pt.id = p.project_type_id
     LEFT JOIN timesheet_entries te ON te.project_id = p.id ${dateFilter}
     WHERE p.workspace_id = ?
-    GROUP BY p.id ORDER BY total_hours DESC
+    GROUP BY p.id ORDER BY p.request_date DESC NULLS LAST
   `).all(...dateParams, req.workspaceId)
   res.json(rows)
 })
@@ -1333,6 +1334,137 @@ app.get('/api/reports/summary', (req, res) => {
     JOIN projects p ON p.id = te.project_id AND p.workspace_id = ?
   `).get(req.workspaceId).n
   res.json({ year: parseInt(year), totalRequested, totalCompleted, topClient: topClient?.name || null, activeUsers })
+})
+
+// ── Daily Backup Email ──────────────────────────────────────────────────────────
+const BACKUP_RECIPIENT = 'sujita.kamble@woventalent.in'
+
+async function buildBackupWorkbook() {
+  const wb = new ExcelJS.Workbook()
+
+  const projects = db.prepare(`
+    SELECT p.project_code, p.name, pt.name AS type_name, p.request_date, ct.name AS requestor_name,
+           c.name AS client_name, p.budgeted_hours, p.status, p.report_initiated, p.report_delivered,
+           p.description,
+           COALESCE((SELECT SUM(hours) FROM timesheet_entries WHERE project_id = p.id), 0) AS total_hours
+    FROM projects p
+    LEFT JOIN project_types pt ON pt.id = p.project_type_id
+    LEFT JOIN contacts ct      ON ct.id = p.requestor_contact_id
+    LEFT JOIN clients c       ON c.id  = p.client_id
+    ORDER BY p.request_date DESC NULLS LAST
+  `).all()
+  const projectSheet = wb.addWorksheet('Projects')
+  projectSheet.columns = [
+    { header: 'Project Code',     key: 'project_code',     width: 14 },
+    { header: 'Project Name',     key: 'name',             width: 30 },
+    { header: 'Type',             key: 'type_name',        width: 16 },
+    { header: 'Request Date',     key: 'request_date',     width: 14 },
+    { header: 'Requestor',        key: 'requestor_name',   width: 20 },
+    { header: 'Client',           key: 'client_name',      width: 20 },
+    { header: 'Budgeted Hours',   key: 'budgeted_hours',   width: 14 },
+    { header: 'Status',           key: 'status',           width: 12 },
+    { header: 'Report Initiated', key: 'report_initiated', width: 16 },
+    { header: 'Report Delivered', key: 'report_delivered', width: 16 },
+    { header: 'Hours Logged',     key: 'total_hours',      width: 14 },
+    { header: 'Description',      key: 'description',      width: 40 },
+  ]
+  projectSheet.getRow(1).font = { bold: true }
+  projectSheet.addRows(projects)
+
+  const entries = db.prepare(`
+    SELECT te.date, u.name AS user_name, u.email AS user_email, p.project_code, p.name AS project_name,
+           c.name AS client_name, te.hours, te.description
+    FROM timesheet_entries te
+    JOIN projects p     ON p.id = te.project_id
+    LEFT JOIN users u   ON u.id = te.user_id
+    LEFT JOIN clients c ON c.id = p.client_id
+    ORDER BY te.date DESC
+  `).all()
+  const tsSheet = wb.addWorksheet('Timesheets')
+  tsSheet.columns = [
+    { header: 'Date',         key: 'date',         width: 14 },
+    { header: 'User',         key: 'user_name',    width: 20 },
+    { header: 'Email',        key: 'user_email',   width: 26 },
+    { header: 'Project Code', key: 'project_code', width: 14 },
+    { header: 'Project Name', key: 'project_name', width: 30 },
+    { header: 'Client',       key: 'client_name',  width: 20 },
+    { header: 'Hours',        key: 'hours',        width: 10 },
+    { header: 'Description',  key: 'description',  width: 40 },
+  ]
+  tsSheet.getRow(1).font = { bold: true }
+  tsSheet.addRows(entries)
+
+  return wb.xlsx.writeBuffer()
+}
+
+async function sendDailyBackupEmail() {
+  const buffer = await buildBackupWorkbook()
+  const dateStr = istToday()
+  const filename = `woven-time-tracking-backup-${dateStr}.xlsx`
+  const subject = `Woven Time Tracking — Daily Backup (${dateStr})`
+  const html = `<p>Attached is the daily backup of all projects and timesheet entries as of ${dateStr}.</p>`
+  const contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+  if (MS_AUTH) {
+    const fromEmail = [...SUPER_ADMIN_EMAILS][0]
+    if (!fromEmail) { console.error('Daily backup email skipped: no SUPER_ADMIN_EMAIL configured to send from'); return }
+    const token = await getGraphToken()
+    const graphRes = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(fromEmail)}/sendMail`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: {
+          subject,
+          body: { contentType: 'HTML', content: html },
+          toRecipients: [{ emailAddress: { address: BACKUP_RECIPIENT } }],
+          attachments: [{
+            '@odata.type': '#microsoft.graph.fileAttachment',
+            name: filename,
+            contentType,
+            contentBytes: Buffer.from(buffer).toString('base64'),
+          }],
+        },
+        saveToSentItems: true,
+      }),
+    })
+    if (!graphRes.ok) {
+      const err = await graphRes.json().catch(() => ({}))
+      console.error('Daily backup Graph sendMail failed:', err?.error?.message || graphRes.status)
+    }
+    return
+  }
+
+  if (!mailer) { console.error('Daily backup email skipped: neither Microsoft SSO nor SMTP is configured'); return }
+  try {
+    await mailer.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: BACKUP_RECIPIENT,
+      subject,
+      html,
+      attachments: [{ filename, content: Buffer.from(buffer), contentType }],
+    })
+  } catch (err) {
+    console.error('Daily backup SMTP email failed:', err.message)
+  }
+}
+
+let lastBackupSentDate = null
+setInterval(() => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(new Date())
+  const get = t => parts.find(p => p.type === t).value
+  const dateStr = `${get('year')}-${get('month')}-${get('day')}`
+  if (get('hour') === '08' && get('minute') === '00' && lastBackupSentDate !== dateStr) {
+    lastBackupSentDate = dateStr
+    sendDailyBackupEmail().catch(err => console.error('Daily backup email failed:', err.message))
+  }
+}, 60_000)
+
+app.post('/api/admin/send-backup-now', (req, res) => {
+  if (req.globalRole !== 'super_admin') return res.status(403).json({ error: 'Super admin only' })
+  sendDailyBackupEmail().catch(err => console.error('Manual backup email failed:', err.message))
+  res.json({ success: true })
 })
 
 // ── Static + SPA ──────────────────────────────────────────────────────────────

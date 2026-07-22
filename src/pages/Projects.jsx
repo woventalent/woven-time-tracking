@@ -41,7 +41,7 @@ function businessDays(start, end) {
   return count
 }
 
-export default function Projects({ onLogTime }) {
+export default function Projects() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
 
@@ -50,6 +50,7 @@ export default function Projects({ onLogTime }) {
   const [projectTypes, setTypes]    = useState([])
   const [wsUsers,      setWsUsers]  = useState([])
   const [search,        setSearch]    = useState('')
+  const [statusTab,     setStatusTab] = useState('all')
   const [showModal,     setShowModal] = useState(false)
   const [editing,       setEditing]   = useState(null)
   const [detailProject, setDetail]    = useState(null)
@@ -101,6 +102,8 @@ export default function Projects({ onLogTime }) {
   }
 
   const filtered = projects.filter(p => {
+    if (statusTab === 'active' && p.status !== 'active') return false
+    if (statusTab === 'completed' && p.status !== 'completed') return false
     if (!search) return true
     const q = search.toLowerCase()
     return p.project_code.toLowerCase().includes(q) ||
@@ -178,7 +181,17 @@ export default function Projects({ onLogTime }) {
         )}
       </div>
 
-      <div style={{ marginBottom: 18 }}>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 18, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', borderRadius: 7, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+          {[['all', 'All'], ['active', 'Active'], ['completed', 'Completed']].map(([id, label]) => (
+            <button key={id} onClick={() => setStatusTab(id)} style={{
+              padding: '8px 16px', border: 'none', fontSize: 13.5, fontWeight: 500,
+              background: statusTab === id ? '#2563eb' : '#fff',
+              color:      statusTab === id ? '#fff'    : '#475569',
+              cursor: 'pointer',
+            }}>{label}</button>
+          ))}
+        </div>
         <input
           value={search} onChange={e => setSearch(e.target.value)}
           placeholder="Search by code, name, client, or requestor…"
@@ -274,11 +287,6 @@ export default function Projects({ onLogTime }) {
                     })()}
                   </td>
                   <td style={{ padding: '13px 16px', whiteSpace: 'nowrap' }}>
-                    {myProjectIds.has(p.id) && (
-                      <button onClick={e => { e.stopPropagation(); onLogTime && onLogTime(p.id) }} style={{ border: '1px solid #bfdbfe', background: '#eff6ff', padding: '4px 10px', borderRadius: 5, fontSize: 12, color: '#2563eb', cursor: 'pointer', marginRight: 6, fontWeight: 600 }}>
-                        Log Time
-                      </button>
-                    )}
                     {isAdmin && (<>
                       <button onClick={e => { e.stopPropagation(); openEdit(p) }} style={{ border: '1px solid #e2e8f0', background: '#fff', padding: '4px 10px', borderRadius: 5, fontSize: 12, color: '#475569', cursor: 'pointer', marginRight: 6 }}>
                         Edit
@@ -337,12 +345,24 @@ function ProjectModal({ project, clients, projectTypes, wsUsers, onSave, onClose
   const [contacts, setContacts] = useState([])
   const [error,    setError]    = useState('')
   const [saving,   setSaving]   = useState(false)
+  const [initialMemberIds, setInitialMemberIds] = useState(new Set())
 
   // Load contacts whenever client changes
   useEffect(() => {
     if (!form.client_id) { setContacts([]); return }
     api.get('/clients/' + form.client_id + '/contacts').then(setContacts)
   }, [form.client_id])
+
+  // When editing, load current members/SPOC so they can be managed from this modal
+  useEffect(() => {
+    if (!project) return
+    api.get('/projects/' + project.id + '/members').then(members => {
+      const ids = members.map(m => String(m.id))
+      setInitialMemberIds(new Set(ids))
+      const spoc = members.find(m => m.is_spoc)
+      setForm(f => ({ ...f, member_ids: ids, spoc_user_id: spoc ? String(spoc.id) : '' }))
+    })
+  }, [project])
 
   function handleClientChange(clientId) {
     setForm(f => ({ ...f, client_id: clientId, requestor_contact_id: '' }))
@@ -359,6 +379,14 @@ function ProjectModal({ project, clients, projectTypes, wsUsers, onSave, onClose
       return setError('Report Delivered cannot be before Report Initiated')
     setSaving(true)
     try {
+      if (project) {
+        const current = new Set(form.member_ids)
+        const added   = [...current].filter(id => !initialMemberIds.has(id))
+        const removed = [...initialMemberIds].filter(id => !current.has(id))
+        for (const uid of added)   await api.post('/projects/' + project.id + '/members', { userId: Number(uid) })
+        for (const uid of removed) await api.delete('/projects/' + project.id + '/members/' + uid)
+        if (form.spoc_user_id) await api.patch('/projects/' + project.id + '/members/' + form.spoc_user_id + '/spoc')
+      }
       await onSave(form)
     } catch (err) {
       setError(err.message)
@@ -378,7 +406,7 @@ function ProjectModal({ project, clients, projectTypes, wsUsers, onSave, onClose
             placeholder="Brief description of the project scope or objective…"
             rows={3} style={{ ...iStyle, resize: 'vertical' }} />
         </Field>
-        {!project && wsUsers.length > 0 && (
+        {wsUsers.length > 0 && (
           <>
             <Field label="Assign Team Members">
               <div style={{ border: '1px solid #cbd5e1', borderRadius: 6, maxHeight: 160, overflowY: 'auto', background: '#fff' }}>
@@ -407,7 +435,7 @@ function ProjectModal({ project, clients, projectTypes, wsUsers, onSave, onClose
                 })}
               </div>
               {form.member_ids.length > 0 && (
-                <p style={{ fontSize: 12, color: '#2563eb', marginTop: 5 }}>Email notifications will be sent to assigned members.</p>
+                <p style={{ fontSize: 12, color: '#2563eb', marginTop: 5 }}>Newly assigned members will be emailed.</p>
               )}
             </Field>
             {form.member_ids.length > 0 && (
@@ -437,14 +465,6 @@ function ProjectModal({ project, clients, projectTypes, wsUsers, onSave, onClose
               <option value="on_hold">On Hold</option>
               <option value="cancelled">Cancelled</option>
             </select>
-          </Field>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="Report Initiated">
-            <input type="date" value={form.report_initiated} onChange={e => setForm({ ...form, report_initiated: e.target.value })} style={iStyle} />
-          </Field>
-          <Field label="Report Delivered">
-            <input type="date" value={form.report_delivered} onChange={e => setForm({ ...form, report_delivered: e.target.value })} style={iStyle} />
           </Field>
         </div>
         <Field label="Budgeted Hours">
@@ -502,6 +522,10 @@ function ProjectDetail({ project, isAdmin, onClose, onProjectUpdate }) {
   const [addUserId, setAddUser]   = useState('')
   const [uploading, setUploading] = useState(false)
   const [docDesc,   setDocDesc]   = useState('')
+  const [editingDates, setEditingDates] = useState(false)
+  const [dateForm,     setDateForm]     = useState({ report_initiated: '', report_delivered: '' })
+  const [dateError,    setDateError]    = useState('')
+  const [savingDates,  setSavingDates]  = useState(false)
   const fileRef                   = useRef()
 
   const loadMembers = () => api.get('/projects/' + project.id + '/members').then(setMembers)
@@ -574,6 +598,36 @@ function ProjectDetail({ project, isAdmin, onClose, onProjectUpdate }) {
     })
   }
 
+  function startEditDates() {
+    setDateForm({ report_initiated: project.report_initiated || '', report_delivered: project.report_delivered || '' })
+    setDateError('')
+    setEditingDates(true)
+  }
+
+  async function saveDates() {
+    setDateError('')
+    if (dateForm.report_initiated && project.request_date && dateForm.report_initiated < project.request_date)
+      return setDateError('Report Initiated cannot be before Request Date')
+    if (dateForm.report_delivered && project.request_date && dateForm.report_delivered < project.request_date)
+      return setDateError('Report Delivered cannot be before Request Date')
+    if (dateForm.report_delivered && dateForm.report_initiated && dateForm.report_delivered < dateForm.report_initiated)
+      return setDateError('Report Delivered cannot be before Report Initiated')
+    setSavingDates(true)
+    try {
+      await api.put('/projects/' + project.id, {
+        name: project.name, project_type_id: project.project_type_id, request_date: project.request_date,
+        requestor_contact_id: project.requestor_contact_id, client_id: project.client_id,
+        budgeted_hours: project.budgeted_hours, status: project.status, description: project.description,
+        report_initiated: dateForm.report_initiated, report_delivered: dateForm.report_delivered,
+      })
+      setEditingDates(false)
+      refreshProject()
+    } catch (err) {
+      setDateError(err.message)
+    }
+    setSavingDates(false)
+  }
+
   const memberIds  = new Set(members.map(m => m.id))
   const available  = wsUsers.filter(u => !memberIds.has(u.id))
 
@@ -616,12 +670,50 @@ function ProjectDetail({ project, isAdmin, onClose, onProjectUpdate }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 16, padding: '14px 16px', background: '#f8fafc', borderRadius: 8, border: '1px solid #f1f5f9' }}>
             <DetailField label="Request Date" value={fmtDate(project.request_date)} />
             <DetailField label="Requestor" value={project.requestor_name} />
-            <DetailField label="Report Initiated" value={fmtDate(project.report_initiated)} />
-            <DetailField label="Report Delivered" value={fmtDate(project.report_delivered)} />
+            {editingDates ? (
+              <>
+                <div>
+                  <div style={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>Report Initiated</div>
+                  <input type="date" value={dateForm.report_initiated}
+                    onChange={e => setDateForm(f => ({ ...f, report_initiated: e.target.value }))}
+                    style={{ width: '100%', padding: '5px 8px', border: '1px solid #cbd5e1', borderRadius: 5, fontSize: 12.5 }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>Report Delivered</div>
+                  <input type="date" value={dateForm.report_delivered}
+                    onChange={e => setDateForm(f => ({ ...f, report_delivered: e.target.value }))}
+                    style={{ width: '100%', padding: '5px 8px', border: '1px solid #cbd5e1', borderRadius: 5, fontSize: 12.5 }} />
+                </div>
+                {dateError && <div style={{ gridColumn: '1 / -1', color: '#ef4444', fontSize: 12 }}>{dateError}</div>}
+                <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 8 }}>
+                  <button onClick={saveDates} disabled={savingDates} type="button"
+                    style={{ padding: '5px 12px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                    {savingDates ? 'Saving…' : 'Save'}
+                  </button>
+                  <button onClick={() => setEditingDates(false)} type="button"
+                    style={{ padding: '5px 12px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 5, fontSize: 12, cursor: 'pointer' }}>
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <DetailField label="Report Initiated" value={fmtDate(project.report_initiated)} />
+                <DetailField label="Report Delivered" value={fmtDate(project.report_delivered)} />
+              </>
+            )}
             <DetailField label="TAT" value={(() => {
               const tat = businessDays(project.report_initiated, project.report_delivered)
               return tat != null ? `${tat}d` : null
             })()} />
+            {isAdmin && !editingDates && (
+              <div style={{ gridColumn: '1 / -1' }}>
+                <button onClick={startEditDates} type="button"
+                  style={{ padding: '4px 10px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 5, fontSize: 11.5, color: '#2563eb', cursor: 'pointer' }}>
+                  Edit Report Initiated / Delivered
+                </button>
+              </div>
+            )}
             <div style={{ gridColumn: '1 / -1' }}>
               <DetailField label="Users Assigned" value={null}>
                 {project.users_assigned

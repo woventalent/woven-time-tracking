@@ -36,7 +36,7 @@ function defaultDateFor(project) {
   return d
 }
 
-export default function Timesheets({ initialProjectId }) {
+export default function Timesheets() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const [entries,    setEntries]   = useState([])
@@ -52,30 +52,9 @@ export default function Timesheets({ initialProjectId }) {
   const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
-    async function loadProjects() {
-      const ps = await api.get(isAdmin ? '/projects' : '/projects?assigned=true')
-      let list = ps
-      if (initialProjectId) {
-        const found = ps.find(p => p.id === initialProjectId)
-        if (!found) {
-          // Project not in user's assigned list — fetch all to get its details
-          const all = await api.get('/projects')
-          const target = all.find(p => p.id === initialProjectId)
-          if (target) list = [...ps, target]
-        }
-        const proj = list.find(p => p.id === initialProjectId)
-        setProjects(list)
-        setEditing(null)
-        setForm({ client_id: proj?.client_id ? String(proj.client_id) : '', project_id: String(initialProjectId), date: defaultDateFor(proj), hours: '', description: '' })
-        setError('')
-        setShowModal(true)
-      } else {
-        setProjects(ps)
-      }
-    }
-    loadProjects()
+    api.get(isAdmin ? '/projects' : '/projects?assigned=true').then(setProjects)
     api.get('/workspace-users').then(setWsUsers)
-  }, [initialProjectId])
+  }, [])
 
   useEffect(() => {
     const params = Object.fromEntries(Object.entries(filters).filter(([, v]) => v))
@@ -158,9 +137,6 @@ export default function Timesheets({ initialProjectId }) {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28 }}>
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#00259C' }}>Timesheets</h1>
-          <p style={{ color: '#64748b', fontSize: 14, marginTop: 4 }}>
-            {entries.length} entr{entries.length !== 1 ? 'ies' : 'y'} &nbsp;·&nbsp; {totalHours.toFixed(1)}h total
-          </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {entries.length > 0 && (

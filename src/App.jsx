@@ -32,7 +32,6 @@ function pageFromPath(pathname) { return PAGE_BY_PATH[pathname] || null }
 
 function MainApp() {
   const [page, setPage] = useState(() => pageFromPath(window.location.pathname) || 'projects')
-  const [logTimeProjectId, setLogTimeProjectId] = useState(null)
 
   useEffect(() => {
     if (!pageFromPath(window.location.pathname)) window.history.replaceState({}, '', '/projects')
@@ -54,19 +53,13 @@ function MainApp() {
     if (window.location.pathname !== path) window.history.pushState({}, '', path)
   }
 
-  function handleLogTime(projectId) {
-    setLogTimeProjectId(projectId)
-    goTo('timesheets')
-  }
-
   function handleNav(p) {
-    setLogTimeProjectId(null)
     goTo(p)
   }
 
   const pages = {
-    projects:   <Projects onLogTime={handleLogTime} />,
-    timesheets: <Timesheets initialProjectId={logTimeProjectId} />,
+    projects:   <Projects />,
+    timesheets: <Timesheets />,
     reports:    <Reports />,
     calendar:   <Calendar />,
     settings:   <Admin />,

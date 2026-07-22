@@ -34,7 +34,9 @@ export default function Calendar() {
     for (const p of projects) {
       if (!p.report_delivered) continue
       const key = p.report_delivered
-      const entry = { id: p.id, name: p.name, client: p.client_name, future: key > todayKey }
+      const future = key > todayKey
+      const status = future ? 'upcoming' : p.status === 'completed' ? 'delivered' : 'overdue'
+      const entry = { id: p.id, name: p.name, client: p.client_name, status }
       ;(map[key] ||= []).push(entry)
     }
     return map
@@ -66,6 +68,7 @@ export default function Calendar() {
       <div style={{ display: 'flex', gap: 16, marginBottom: 14, fontSize: 12.5, color: '#64748b' }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Dot color="#16a34a" /> Delivered</span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Dot color="#2563eb" /> Upcoming</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Dot color="#ef4444" /> Overdue</span>
       </div>
 
       <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
@@ -91,14 +94,21 @@ export default function Calendar() {
                   borderRadius: '50%', background: isToday ? '#2563eb' : 'transparent', marginBottom: 4,
                 }}>{d.getDate()}</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                  {items.map(it => (
-                    <div key={it.id} title={`${it.name} — ${it.client || 'No client'}`} style={{
-                      fontSize: 11, padding: '3px 6px', borderRadius: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      background: it.future ? '#eff6ff' : '#f0fdf4', color: it.future ? '#2563eb' : '#16a34a', fontWeight: 600,
-                    }}>
-                      {it.name}{it.client ? ` · ${it.client}` : ''}
-                    </div>
-                  ))}
+                  {items.map(it => {
+                    const palette = {
+                      upcoming: { bg: '#eff6ff', fg: '#2563eb' },
+                      delivered: { bg: '#f0fdf4', fg: '#16a34a' },
+                      overdue: { bg: '#fef2f2', fg: '#ef4444' },
+                    }[it.status]
+                    return (
+                      <div key={it.id} title={`${it.name} — ${it.client || 'No client'}${it.status === 'overdue' ? ' (overdue)' : ''}`} style={{
+                        fontSize: 11, padding: '3px 6px', borderRadius: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        background: palette.bg, color: palette.fg, fontWeight: 600,
+                      }}>
+                        {it.name}{it.client ? ` · ${it.client}` : ''}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )
