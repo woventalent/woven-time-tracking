@@ -1,0 +1,55 @@
+name: Verify what is ACTUALLY live right now (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: What does nginx-proxy currently think time_tracking points at?
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            echo "=== current upstream time_tracking block, live file ===";
+            grep -n -A2 "upstream time_tracking" /opt/alternative-ens-deployment/nginx.production.conf;
+            echo;
+            echo "=== what nginx-proxy is ACTUALLY running with (nginx -T, not just the file) ===";
+            docker exec nginx-proxy nginx -T 2>/dev/null | grep -A2 "upstream time_tracking";
+          '
+
+      - name: Is the Docker container running, healthy, and what code does it actually contain?
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            echo "=== container status ===";
+            docker ps -a --filter "name=woven-time-tracking" --format "{{.ID}}  {{.Names}}  {{.Status}}  {{.Ports}}";
+            echo;
+            echo "=== when was the image built / container created ===";
+            docker inspect woven-time-tracking --format "Created: {{.Created}}" ;
+            docker inspect woven-time-tracking --format "Image: {{.Image}}" ;
+            echo;
+            echo "=== does the RUNNING containers server.js actually contain the fix? ===";
+            docker exec woven-time-tracking grep -n "isAdmin && req.query.all" /app/server.js || echo "FIX NOT FOUND IN RUNNING CONTAINER";
+            echo;
+            echo "=== is PM2s process ALSO still running (could it be what is actually serving)? ===";
+            pm2 list | grep -i woven || echo "not found in pm2 list";
+          '
+
+      - name: Hit the app directly on each candidate port and compare
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            echo "=== port 3009 (docker) — asset filename (cache-busted, changes per build) ===";
+            curl -s http://localhost:3009/ | grep -o "assets/index-[a-zA-Z0-9]*\.js" | head -1;
+            echo "=== port 3007 (pm2) — asset filename ===";
+            curl -s http://localhost:3007/ | grep -o "assets/index-[a-zA-Z0-9]*\.js" | head -1;
+          '
+          echo "=== PUBLIC site — asset filename actually being served to real users ==="
+          curl -s --max-time 15 https://time.woventalent.in/ | grep -o "assets/index-[a-zA-Z0-9]*\.js" | head -1
+          echo "=== a cache-busted request (bypass any intermediary caching) ==="
+          curl -s --max-time 15 "https://time.woventalent.in/?cachebust=$RANDOM" -H "Cache-Control: no-cache" -H "Pragma: no-cache" | grep -o "assets/index-[a-zA-Z0-9]*\.js" | head -1
