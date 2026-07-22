@@ -14,19 +14,18 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
 
-      - name: Read the real host nginx config for time.woventalent.in (read-only)
+      - name: Confirm whether SSH_HOST is even the box behind time.woventalent.in
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
-            echo "=== nginx -T (full effective config), filtered to the time.woventalent.in server block ===";
-            nginx -T 2>/dev/null | awk "/server_name[^;]*time\.woventalent\.in/{f=1} f{print} f&&/^}/{f=0; print \"---\"}";
+            echo "=== hostname ===";
+            hostname; hostname -I 2>/dev/null;
             echo;
-            echo "=== which config FILES define server_name time.woventalent.in ===";
-            grep -rl "time.woventalent.in" /etc/nginx/ 2>/dev/null || echo "no file matched under /etc/nginx";
+            echo "=== public IP as seen by this host ===";
+            curl -s --max-time 10 https://ifconfig.me || curl -s --max-time 10 https://api.ipify.org || echo "could not determine public IP";
             echo;
-            echo "=== full listing of sites-enabled / conf.d ===";
-            ls -la /etc/nginx/sites-enabled/ 2>/dev/null;
-            ls -la /etc/nginx/conf.d/ 2>/dev/null;
+            echo "=== does curl to localhost:443 with the right Host header hit our app? ===";
+            curl -sk --max-time 10 -H "Host: time.woventalent.in" https://localhost/api/health; echo;
             echo;
-            echo "=== nginx -t (config syntax check, read-only) ===";
-            nginx -t 2>&1;
+            echo "=== ALL nginx server_name directives on this host (every site) ===";
+            nginx -T 2>/dev/null | grep -i "server_name" ;
           '
