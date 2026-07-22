@@ -1,0 +1,71 @@
+name: Repoint nginx-proxy's time_tracking upstream from PM2 (3007) to Docker (3009)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  repoint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Confirm the Docker container is healthy and has current data before touching anything
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            status=$(docker inspect --format="{{.State.Health.Status}}" woven-time-tracking 2>/dev/null || echo "missing");
+            echo "woven-time-tracking health: $status";
+            if [ "$status" != "healthy" ]; then echo "NOT HEALTHY — aborting"; exit 1; fi
+            curl -sf http://localhost:3009/api/health || (echo "port 3009 not responding — aborting" && exit 1)
+            echo
+          '
+
+      - name: Back up the real nginx config before editing
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            mkdir -p /root/pm2-to-docker-backup
+            cp /opt/alternative-ens-deployment/nginx.production.conf /root/pm2-to-docker-backup/nginx.production.conf.bak.$(date +%s)
+            grep -n -A2 "upstream time_tracking" /opt/alternative-ens-deployment/nginx.production.conf
+          '
+
+      - name: Repoint ONLY the time_tracking upstream (3007 -> 3009), nothing else in the file
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            sed -i "/upstream time_tracking {/,/}/ s/server 127\.0\.0\.1:3007;/server 127.0.0.1:3009;/" /opt/alternative-ens-deployment/nginx.production.conf
+            echo "=== updated block ===";
+            grep -n -A2 "upstream time_tracking" /opt/alternative-ens-deployment/nginx.production.conf
+          '
+
+      - name: Validate config syntax INSIDE the real container before reloading anything
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            docker exec nginx-proxy nginx -t
+          '
+
+      - name: Reload nginx-proxy (graceful — does not restart the container, other sites unaffected)
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@${{ secrets.SSH_HOST }} '
+            docker exec nginx-proxy nginx -s reload
+          '
+
+      - name: Verify the live site now serves via Docker, and unrelated sites on the same proxy still work
+        run: |
+          sleep 3
+          echo "=== time.woventalent.in /api/health ===";
+          curl -s https://time.woventalent.in/api/health --max-time 15; echo
+          echo "=== time.woventalent.in site status ===";
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" https://time.woventalent.in/ --max-time 15
+          echo "=== confirm unrelated sites on the same nginx-proxy still respond ===";
+          curl -s -o /dev/null -w "prism.woventalent.in HTTP %{http_code}\n" https://prism.woventalent.in/ --max-time 15 || echo "prism check failed"
+          curl -s -o /dev/null -w "i-2-rcc.woventalent.in HTTP %{http_code}\n" https://i-2-rcc.woventalent.in/ --max-time 15 || echo "i-2-rcc check failed"
+
+      - name: Report
+        run: |
+          echo "nginx-proxy's time_tracking upstream now points at 127.0.0.1:3009 (the Docker container)."
+          echo "PM2's woven-time-tracking process has NOT been stopped — it's an idle safety net."
+          echo "Once the live site has been confirmed working end-to-end over some real traffic,"
+          echo "PM2 can be decommissioned as a separate, deliberate follow-up."
